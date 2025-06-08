@@ -2,7 +2,7 @@
 
 # Available:
 # amd64,arm,arm64,mips,mips64,mips64le,mipsle
-ARCH=arm64
+ARCH=mipsle
 
 # Choose specific version
 #read -p "Choose version: " VER
