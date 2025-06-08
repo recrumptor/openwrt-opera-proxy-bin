@@ -13,7 +13,7 @@ define Package/$(PKG_NAME)
     CATEGORY:=Network
     TITLE:=Opera Proxy client
     URL:=https://github.com/Snawoot/opera-proxy
-    PKGARCH:=aarch64_cortex-a53
+    PKGARCH:=mipsel_24kc
 endef
 
 define Build/Configure
