@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      test_build:
+        description: 'Тестовая сборка (без публикации релиза)'
+        type: boolean
+        default: false
   schedule:
     - cron: '14 1 * * 5'
 
@@ -33,7 +38,8 @@ jobs:
 
   build:
     needs: check-version
-    if: needs.check-version.outputs.exists == 'false'
+    # В тестовом режиме собираем, даже если релиз этой версии уже существует
+    if: needs.check-version.outputs.exists == 'false' || inputs.test_build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -46,7 +52,6 @@ jobs:
             goarch: "mipsle"
             gomips: "softfloat"
             sdk_url: "https://downloads.openwrt.org/releases/24.10.2/targets/ramips/mt7621/openwrt-sdk-24.10.2-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
-
           - openwrt_ver: "24.10"
             pkg_ext: "ipk"
             pkg_arch: "aarch64_cortex-a53"
@@ -61,7 +66,6 @@ jobs:
             goarch: "mipsle"
             gomips: "softfloat"
             sdk_url: "https://downloads.openwrt.org/releases/25.12.4/targets/ramips/mt7621/openwrt-sdk-25.12.4-ramips-mt7621_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
-
           - openwrt_ver: "25.12"
             pkg_ext: "apk"
             pkg_arch: "aarch64_cortex-a53"
@@ -88,7 +92,7 @@ jobs:
           cd ..
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y libncurses5-dev zstd
+        run: sudo apt update && sudo apt install -y libncurses5-dev zstd upx-ucl
 
       - name: Setup SDK
         run: |
@@ -98,23 +102,26 @@ jobs:
 
       - name: Compress binary with UPX
         run: |
+          echo "Размер до сжатия:"
           ls -l opera-proxy-bin
           upx --best opera-proxy-bin
+          # Проверяем целостность упакованного файла
           upx -t opera-proxy-bin
+          echo "Размер после сжатия:"
           ls -l opera-proxy-bin
-          
+
       - name: Prepare Package
         run: |
           # Копируем скомпилированный нами Go-бинарник в структуру пакета
           mkdir -p opera-proxy/files/usr/bin
           cp opera-proxy-bin opera-proxy/files/usr/bin/opera-proxy
           chmod +x opera-proxy/files/usr/bin/opera-proxy
-          
+
           # Прописываем актуальную версию в Makefile пакета
           VER="${{ needs.check-version.outputs.ver }}"
           [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
           sed -i "s/^PKG_VERSION:=.*$/PKG_VERSION:=$VER/" opera-proxy/Makefile
-          
+
           # Закидываем готовый пакет в SDK
           cp -r opera-proxy sdk/package/
 
@@ -127,17 +134,17 @@ jobs:
           echo "CONFIG_PACKAGE_opera-proxy=y" >> .config
           make defconfig
           make package/opera-proxy/compile V=s -j$(nproc)
-          
+
           echo "=== Поиск и копирование готового пакета ==="
           mkdir -p ../output-artifacts
-          
+
           # Получаем версию для имени файла (так же, как делали строкой выше)
           VER="${{ needs.check-version.outputs.ver }}"
           [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
-          
+
           # Копируем файл, добавляя переменную $VER прямо в финальное название пакета
           find bin/ -name "opera-proxy*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
-          
+
           if [ -z "$(ls -A ../output-artifacts/)" ]; then
             echo "Файл пакета не найден после компиляции!"
             exit 1
@@ -152,12 +159,14 @@ jobs:
 
   publish:
     needs: [check-version, build]
+    # В тестовом режиме релиз не публикуем
+    if: ${{ !inputs.test_build }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v5
         with:
           path: artifacts
-          
+
       - name: Publish Release
         uses: softprops/action-gh-release@v3
         with:
