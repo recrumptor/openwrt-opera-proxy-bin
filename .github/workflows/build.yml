@@ -104,7 +104,7 @@ jobs:
         run: |
           echo "Размер до сжатия:"
           ls -l opera-proxy-bin
-          upx --best opera-proxy-bin
+          upx --best --lzma opera-proxy-bin
           # Проверяем целостность упакованного файла
           upx -t opera-proxy-bin
           echo "Размер после сжатия:"
