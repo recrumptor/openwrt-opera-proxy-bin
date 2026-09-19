@@ -29,7 +29,16 @@ config instance 'Asia'
 ```
 Создаст один http и два socks прокси сервера
 
-  Подробнее можно прочитать на странице https://github.com/Alexey71/opera-proxy
+⚙️ Установка на OpenWrt25.
+
+Скопировать apk-файл нужной архитектуры в папку tmp
+
+Выполнить в консоли:
+```
+apk add --allow-untrusted /tmp/opera-proxy-*.apk
+```
+
+  Подробнее про настройки можно прочитать на странице https://github.com/Alexey71/opera-proxy
 
   📚 Источник
 Исходный код клиента: [Alexey71/opera-proxy](https://github.com/Alexey71/opera-proxy)
