@@ -99,7 +99,7 @@ jobs:
       - name: Compress binary with UPX
         run: |
           ls -l opera-proxy-bin
-          upx --best opera-proxy-bin
+          upx --best --lzma opera-proxy-bin
           upx -t opera-proxy-bin
           ls -l opera-proxy-bin
           
