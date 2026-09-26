@@ -29,23 +29,38 @@ var callTest = rpc.declare({
 	params: ['name']
 });
 
+// Per-instance default listen address so three freshly-enabled instances
+// don't all collide on the opera-proxy binary's own built-in default (127.0.0.1:18080).
+var DEFAULT_LISTEN_BY_NAME = {
+	'default': '127.0.0.1:18081',
+	'Americas': '127.0.0.1:18082',
+	'Asia': '127.0.0.1:18083'
+};
+
+function defaultListenFor(name, idx) {
+	return DEFAULT_LISTEN_BY_NAME[name] || ('127.0.0.1:' + (18081 + idx));
+}
+
 // Maps form fields <-> opera-proxy CLI flags inside the single 'args' UCI option.
 var FIELDS = [
 	{ key: 'country', flag: '-country', type: 'select', def: 'EU',
 	  options: [['EU', 'Europe'], ['AS', 'Asia'], ['AM', 'Americas']] },
 	{ key: 'socks_mode', flag: '-socks-mode', type: 'flag',
 	  label: 'SOCKS5 mode', hint: 'Enabled = SOCKS5 proxy. Disabled = HTTP proxy.' },
-	{ key: 'bind_address', flag: '-bind-address', type: 'text', def: '127.0.0.1:18080', label: 'Listen address' },
-	{ key: 'verbosity', flag: '-verbosity', type: 'text', def: '20', label: 'Verbosity' },
+	{ key: 'bind_address', flag: '-bind-address', type: 'text', label: 'Listen address' },
+	{ key: 'verbosity', flag: '-verbosity', type: 'text', def: '20', label: 'Logging verbosity',
+	  hint: '10 debug, 20 info, 30 warning, 40 error, 50 critical, 60 silent' },
 	{ key: 'timeout', flag: '-timeout', type: 'text', def: '10s', label: 'Request timeout' },
 	{ key: 'refresh', flag: '-refresh', type: 'text', def: '4h', label: 'Endpoint refresh interval' },
 	{ key: 'server_selection', flag: '-server-selection', type: 'select', def: 'fastest',
 	  options: [['first', 'first'], ['random', 'random'], ['fastest', 'fastest']], label: 'Server selection' },
 	{ key: 'proxy', flag: '-proxy', type: 'text', label: 'Upstream proxy', placeholder: 'socks5://127.0.0.1:1080' },
 	{ key: 'api_proxy', flag: '-api-proxy', type: 'text', label: 'API proxy', placeholder: 'http://127.0.0.1:8080' },
-	{ key: 'cafile', flag: '-cafile', type: 'text', label: 'CA bundle file' },
-	{ key: 'fake_sni', flag: '-fake-SNI', type: 'text', label: 'Fake SNI' },
-	{ key: 'override_proxy_address', flag: '-override-proxy-address', type: 'text', label: 'Override proxy address' }
+	{ key: 'api_proxy_list_url', flag: '-api-proxy-list-url', type: 'text', label: 'API proxy list URL',
+	  placeholder: 'https://example.com/proxy-list.txt' },
+	{ key: 'fake_sni', flag: '-fake-SNI', type: 'text', label: 'Fake SNI', placeholder: 'www.google.com' },
+	{ key: 'override_proxy_address', flag: '-override-proxy-address', type: 'text', label: 'Override proxy address',
+	  placeholder: 'host:port, e.g. 1.2.3.4:443' }
 ];
 
 function parseArgs(str) {
@@ -56,7 +71,12 @@ function parseArgs(str) {
 			out[f.key] = tokens.indexOf(f.flag) !== -1;
 		} else {
 			var i = tokens.indexOf(f.flag);
-			out[f.key] = (i !== -1 && tokens[i + 1] !== undefined) ? tokens[i + 1] : '';
+			var val = (i !== -1 && tokens[i + 1] !== undefined) ? tokens[i + 1] : '';
+			// For selects, an absent flag should still resolve to a real, saved
+			// choice (e.g. 'fastest') rather than silently defaulting to whatever
+			// option happens to be listed first in the dropdown.
+			if (!val && f.type === 'select' && f.def) val = f.def;
+			out[f.key] = val;
 		}
 	});
 	return out;
@@ -123,8 +143,9 @@ function statusCard(title, value, sub) {
 	]);
 }
 
-function renderInstance(inst) {
+function renderInstance(inst, idx) {
 	var values = parseArgs(inst.args);
+	if (!values.bind_address) values.bind_address = defaultListenFor(inst.name, idx);
 	var root = E('div', { 'class': 'cbi-section', 'data-instance': inst.name });
 
 	var statusRow = E('div', { 'class': 'status-row' });
@@ -223,8 +244,8 @@ return view.extend({
 	render: function (instances) {
 		var container = E('div', { 'class': 'opera-proxy-instances' });
 
-		(instances || []).forEach(function (inst) {
-			container.appendChild(renderInstance(inst));
+		(instances || []).forEach(function (inst, idx) {
+			container.appendChild(renderInstance(inst, idx));
 		});
 
 		poll.add(function () {
