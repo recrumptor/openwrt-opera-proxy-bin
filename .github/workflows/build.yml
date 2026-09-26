@@ -194,13 +194,16 @@ jobs:
           VER="${{ needs.check-version.outputs.ver }}"
           [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
 
-          # opera-proxy собран под конкретную архитектуру
-          find bin/ -name "opera-proxy_*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+          # opera-proxy собран под конкретную архитектуру.
+          # ipk называет файлы через подчёркивание (opera-proxy_1.14.0-1_mipsel_24kc.ipk),
+          # apk — через дефис и без подчёркиваний (opera-proxy-1.14.0-r1.apk),
+          # поэтому [_-] покрывает оба варианта одним шаблоном.
+          find bin/ -name "opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
 
           # luci-app-opera-proxy архитектурно-независим (PKGARCH:=all),
           # копируем один раз на ветку OpenWrt, чтобы не плодить дубликаты в релизе
           if [ "${{ matrix.pkg_arch }}" = "mipsel_24kc" ]; then
-            find bin/ -name "luci-app-opera-proxy_*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/luci-app-opera-proxy-${VER}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+            find bin/ -name "luci-app-opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/luci-app-opera-proxy-${VER}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
           fi
 
           if [ -z "$(ls -A ../output-artifacts/)" ]; then
