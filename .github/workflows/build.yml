@@ -171,31 +171,48 @@ jobs:
           [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
           sed -i "s/^PKG_VERSION:=.*$/PKG_VERSION:=$VER/" opera-proxy/Makefile
 
-          # Закидываем готовый пакет в SDK
-          cp -r opera-proxy sdk/package/
+          # Закидываем готовые пакеты в SDK.
+          # luci-app-opera-proxy лежит в репозитории внутри папки opera-proxy,
+          # но в SDK кладём его отдельным плоским пакетом верхнего уровня,
+          # иначе таргет компиляции стал бы package/opera-proxy/luci-app-opera-proxy/compile.
+          cp -r opera-proxy sdk/package/opera-proxy
+          rm -rf sdk/package/opera-proxy/luci-app-opera-proxy
+          cp -r opera-proxy/luci-app-opera-proxy sdk/package/luci-app-opera-proxy
 
       - name: Compile Package
         run: |
           cd sdk
           make oldconfig || make defconfig
-          ./scripts/feeds update base
+          ./scripts/feeds update base luci
           ./scripts/feeds install -a
           echo "CONFIG_PACKAGE_opera-proxy=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-opera-proxy=y" >> .config
           make defconfig
           make package/opera-proxy/compile V=s -j$(nproc)
+          make package/luci-app-opera-proxy/compile V=s -j$(nproc)
 
-          echo "=== Поиск и копирование готового пакета ==="
+          echo "=== Поиск и копирование готовых пакетов ==="
           mkdir -p ../output-artifacts
 
           # Получаем версию для имени файла (так же, как делали строкой выше)
           VER="${{ needs.check-version.outputs.ver }}"
           [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
 
-          # Копируем файл, добавляя переменную $VER прямо в финальное название пакета
-          find bin/ -name "opera-proxy*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+          # opera-proxy собран под конкретную архитектуру
+          find bin/ -name "opera-proxy_*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+
+          # luci-app-opera-proxy архитектурно-независим (PKGARCH:=all),
+          # копируем один раз на ветку OpenWrt, чтобы не плодить дубликаты в релизе
+          if [ "${{ matrix.pkg_arch }}" = "mipsel_24kc" ]; then
+            find bin/ -name "luci-app-opera-proxy_*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/luci-app-opera-proxy-${VER}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+          fi
 
           if [ -z "$(ls -A ../output-artifacts/)" ]; then
-            echo "Файл пакета не найден после компиляции!"
+            echo "Ни одного пакета не найдено после компиляции!"
+            exit 1
+          fi
+          if ! ls ../output-artifacts/opera-proxy-*.${{ matrix.pkg_ext }} >/dev/null 2>&1; then
+            echo "Пакет opera-proxy не найден после компиляции!"
             exit 1
           fi
 
