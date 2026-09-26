@@ -9,8 +9,8 @@ on:
         description: 'Тестовая сборка (без публикации релиза)'
         type: boolean
         default: false
-  schedule:
-    - cron: '14 1 * * 5'
+ # schedule:
+  #  - cron: '14 1 * * 5'
 
 jobs:
   check-version:
