@@ -185,10 +185,11 @@ function renderInstance(inst, idx) {
 	function runTest(name) {
 		lastAction.textContent = 'Testing proxy...';
 		callTest(name).then(function (res) {
+			var via = res && res.proxy_url ? (' via ' + res.proxy_url) : '';
 			if (res && res.success) {
-				lastAction.textContent = 'Test OK (HTTP ' + res.http_code + ', ' + parseFloat(res.time_total).toFixed(2) + 's)';
+				lastAction.textContent = 'Test OK (HTTP ' + res.http_code + ', ' + parseFloat(res.time_total).toFixed(2) + 's)' + via;
 			} else {
-				lastAction.textContent = 'Test failed' + (res && res.http_code ? ' (HTTP ' + res.http_code + ')' : '');
+				lastAction.textContent = 'Test failed' + (res && res.http_code ? ' (HTTP ' + res.http_code + ')' : '') + via;
 			}
 		});
 	}
