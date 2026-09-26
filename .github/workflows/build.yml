@@ -171,13 +171,9 @@ jobs:
           [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
           sed -i "s/^PKG_VERSION:=.*$/PKG_VERSION:=$VER/" opera-proxy/Makefile
 
-          # Закидываем готовые пакеты в SDK.
-          # luci-app-opera-proxy лежит в репозитории внутри папки opera-proxy,
-          # но в SDK кладём его отдельным плоским пакетом верхнего уровня,
-          # иначе таргет компиляции стал бы package/opera-proxy/luci-app-opera-proxy/compile.
-          cp -r opera-proxy sdk/package/opera-proxy
-          rm -rf sdk/package/opera-proxy/luci-app-opera-proxy
-          cp -r opera-proxy/luci-app-opera-proxy sdk/package/luci-app-opera-proxy
+          # Закидываем готовые пакеты в SDK
+          cp -r opera-proxy sdk/package/
+          cp -r luci-app-opera-proxy sdk/package/
 
       - name: Compile Package
         run: |
