@@ -33,6 +33,14 @@ instance_running() {
 	fi
 }
 
+has_socks_mode() {
+	# $1 = args string -> returns 0 (true) if -socks-mode token is present
+	local tok
+	for tok in $1; do
+		[ "$tok" = "-socks-mode" ] && return 0
+	done
+	return 1
+}
 arg_value() {
 	# extract the value that follows a flag inside an args string, e.g.
 	# arg_value "-country" "-bind-address 1.2.3.4:8080 -country AS" -> AS
@@ -65,7 +73,7 @@ method_get_instances() {
 		listen=$(arg_value "-bind-address" "$args")
 		[ -n "$listen" ] || listen=$(arg_value "--bind-address" "$args")
 		socks=0
-		case " $args " in *" -socks-mode "*) socks=1 ;; esac
+		has_socks_mode "$args" && socks=1
 
 		json_add_object ""
 		json_add_string name "$name"
@@ -166,7 +174,7 @@ method_test_proxy() {
 	[ -n "$listen" ] || listen="127.0.0.1:18080"
 
 	socks=0
-	case " $args " in *" -socks-mode "*) socks=1 ;; esac
+	has_socks_mode "$args" && socks=1
 
 	if [ "$socks" = 1 ]; then
 		proxy_url="socks5h://$listen"
@@ -186,6 +194,7 @@ method_test_proxy() {
 	fi
 	json_add_string http_code "${code:-0}"
 	json_add_string time_total "${time:-0}"
+	json_add_string proxy_url "$proxy_url"
 	json_dump
 }
 
