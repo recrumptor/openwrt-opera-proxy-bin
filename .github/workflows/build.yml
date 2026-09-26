@@ -200,10 +200,18 @@ jobs:
           # поэтому [_-] покрывает оба варианта одним шаблоном.
           find bin/ -name "opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
 
-          # luci-app-opera-proxy архитектурно-независим (PKGARCH:=all),
-          # копируем один раз на ветку OpenWrt, чтобы не плодить дубликаты в релизе
+          # luci-app-opera-proxy архитектурно-независим (PKGARCH:=all) и одинаков
+          # для любой архитектуры внутри одной ветки OpenWrt, поэтому собираем его
+          # только один раз (на прогоне mipsel_24kc) и кладём в СВОЙ отдельный артефакт,
+          # а не подмешиваем к opera-proxy — иначе он виден только в одном из шести
+          # артефактов матрицы, и его легко не найти.
           if [ "${{ matrix.pkg_arch }}" = "mipsel_24kc" ]; then
-            find bin/ -name "luci-app-opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/luci-app-opera-proxy-${VER}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+            mkdir -p ../luci-artifacts
+            find bin/ -name "luci-app-opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../luci-artifacts/luci-app-opera-proxy-${VER}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+            if ! ls ../luci-artifacts/luci-app-opera-proxy-*.${{ matrix.pkg_ext }} >/dev/null 2>&1; then
+              echo "Пакет luci-app-opera-proxy не найден после компиляции!"
+              exit 1
+            fi
           fi
 
           if [ -z "$(ls -A ../output-artifacts/)" ]; then
@@ -220,6 +228,14 @@ jobs:
         with:
           name: opera-proxy-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}
           path: output-artifacts/
+          if-no-files-found: error
+
+      - name: Upload LuCI Artifact
+        if: matrix.pkg_arch == 'mipsel_24kc'
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-opera-proxy-v${{ matrix.openwrt_ver }}
+          path: luci-artifacts/
           if-no-files-found: error
 
   publish:
