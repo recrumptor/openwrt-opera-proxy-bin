@@ -49,29 +49,41 @@ jobs:
           - openwrt_ver: "24.10"
             pkg_ext: "ipk"
             pkg_arch: "mipsel_24kc"
+            target_name: "ramips/mt7621"
             goarch: "mipsle"
             gomips: "softfloat"
-            sdk_url: "https://downloads.openwrt.org/releases/24.10.2/targets/ramips/mt7621/openwrt-sdk-24.10.2-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
           - openwrt_ver: "24.10"
             pkg_ext: "ipk"
             pkg_arch: "aarch64_cortex-a53"
+            target_name: "mediatek/filogic"
             goarch: "arm64"
             gomips: ""
-            sdk_url: "https://downloads.openwrt.org/releases/24.10.2/targets/mediatek/filogic/openwrt-sdk-24.10.2-mediatek-filogic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+          - openwrt_ver: "24.10"
+            pkg_ext: "ipk"
+            pkg_arch: "x86_64"
+            target_name: "x86/64"
+            goarch: "amd64"
+            gomips: ""
 
           # --- OPENWRT 25.12 (Формат пакетов: .apk) ---
           - openwrt_ver: "25.12"
             pkg_ext: "apk"
             pkg_arch: "mipsel_24kc"
+            target_name: "ramips/mt7621"
             goarch: "mipsle"
             gomips: "softfloat"
-            sdk_url: "https://downloads.openwrt.org/releases/25.12.4/targets/ramips/mt7621/openwrt-sdk-25.12.4-ramips-mt7621_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
           - openwrt_ver: "25.12"
             pkg_ext: "apk"
             pkg_arch: "aarch64_cortex-a53"
+            target_name: "mediatek/filogic"
             goarch: "arm64"
             gomips: ""
-            sdk_url: "https://downloads.openwrt.org/releases/25.12.4/targets/mediatek/filogic/openwrt-sdk-25.12.4-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+          - openwrt_ver: "25.12"
+            pkg_ext: "apk"
+            pkg_arch: "x86_64"
+            target_name: "x86/64"
+            goarch: "amd64"
+            gomips: ""
 
     steps:
       # Клонируем НАШ собственный репозиторий, где лежат папка opera-proxy и Makefile
@@ -92,13 +104,50 @@ jobs:
           cd ..
 
       - name: Install dependencies
-        run: sudo apt update && sudo apt install -y libncurses5-dev zstd upx-ucl
+        run: sudo apt update && sudo apt install -y libncurses5-dev zstd xz-utils upx-ucl
+
+      - name: Resolve OpenWrt version & SDK URL
+        id: sdk
+        run: |
+          BRANCH="${{ matrix.openwrt_ver }}"
+
+          # Ищем последнюю патч-версию нужной ветки (например 24.10 -> 24.10.2)
+          FULL_VER=$(curl -s "https://downloads.openwrt.org/releases/" \
+            | grep -oE "${BRANCH//./\\.}\.[0-9]+" \
+            | sort -V | uniq | tail -1)
+
+          if [ -z "$FULL_VER" ]; then
+            echo "Не удалось определить актуальную версию OpenWrt для ветки $BRANCH"
+            exit 1
+          fi
+          echo "Актуальная версия OpenWrt для ветки $BRANCH: $FULL_VER"
+
+          # Ищем файл SDK в папке target'а, как в примере
+          TARGET_DIR="${{ matrix.target_name }}"
+          BASE_URL="https://downloads.openwrt.org/releases/$FULL_VER/targets/$TARGET_DIR"
+          SDK_FILENAME=$(curl -s "$BASE_URL/" \
+            | grep -o 'href="[^"]*openwrt-sdk-[^"]*\.tar\.\(zst\|xz\)"' \
+            | sed 's/href="//;s/"$//' | head -1)
+
+          if [ -z "$SDK_FILENAME" ]; then
+            echo "Не удалось найти SDK для $TARGET_DIR (OpenWrt $FULL_VER)"
+            exit 1
+          fi
+
+          echo "Найден SDK: $SDK_FILENAME"
+          echo "sdk_url=$BASE_URL/$SDK_FILENAME" >> $GITHUB_OUTPUT
+          echo "sdk_filename=$SDK_FILENAME" >> $GITHUB_OUTPUT
 
       - name: Setup SDK
         run: |
-          wget -O sdk.tar.zst ${{ matrix.sdk_url }}
+          wget -O sdk.archive "${{ steps.sdk.outputs.sdk_url }}"
           mkdir sdk
-          tar --use-compress-program=unzstd -xf sdk.tar.zst -C sdk --strip-components=1
+          FILENAME="${{ steps.sdk.outputs.sdk_filename }}"
+          if [[ "$FILENAME" == *.tar.zst ]]; then
+            tar --use-compress-program=unzstd -xf sdk.archive -C sdk --strip-components=1
+          else
+            tar -xJf sdk.archive -C sdk --strip-components=1
+          fi
 
       - name: Compress binary with UPX
         run: |
