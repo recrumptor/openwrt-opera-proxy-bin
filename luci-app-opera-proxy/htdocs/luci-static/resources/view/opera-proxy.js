@@ -43,22 +43,14 @@ var callVersion = rpc.declare({
 
 // Folder-tab strip in the top-right corner, so switching between instances
 // doesn't require scrolling past the other two.
-var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap}' +
-	'.op-tab{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px 8px 0 0;' +
-	'cursor:pointer;font-weight:600;background:rgba(128,128,128,.12);' +
-	'border:1px solid rgba(128,128,128,.35)}' +
-	'.op-tab.active{background:rgba(128,128,128,.02);border-bottom-color:transparent;z-index:2}' +
-	'.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none}' +
+// Only cosmetic add-ons that LuCI's native tab widget doesn't provide by itself.
+var TAB_CSS = '.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none;' +
+	'display:inline-block;margin-right:6px;vertical-align:middle}' +
 	'.op-tab-dot.running{background:#2ecc71}' +
 	'.op-tab-edit{border:none;cursor:pointer;color:inherit;opacity:.85;font-size:12px;padding:1px 5px;' +
-	'line-height:1.6;border-radius:4px;background:rgba(128,128,128,.18)}' +
+	'line-height:1.6;border-radius:4px;background:rgba(128,128,128,.18);margin-left:6px;vertical-align:middle}' +
 	'.op-tab-edit:hover{opacity:1;background:rgba(128,128,128,.35)}' +
 	'.op-tab-name-input{width:100px;font-weight:600}' +
-	'.op-panels{border-left:1px solid rgba(128,128,128,.35);border-right:1px solid rgba(128,128,128,.35);' +
-	'border-bottom:1px solid rgba(128,128,128,.35);border-top:none;border-radius:0 0 8px 8px;padding:12px;' +
-	'background:rgba(128,128,128,.02)}' +
-	'.op-panel{display:none}' +
-	'.op-panel.active{display:block}' +
 	'.op-status-row{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:16px;margin-bottom:10px}' +
 	'.op-status-title{font-weight:600;margin-bottom:4px}' +
 	'.op-status-value{margin-bottom:2px;min-height:1.3em}' +
@@ -285,89 +277,19 @@ return view.extend({
 		var instances = data[0] || [];
 		var binaryVersion = data[1] || 'unknown';
 
-		var tabsBar = E('div', { 'class': 'op-tabs' });
-		var panels = E('div', { 'class': 'op-panels' });
-
-		function setActive(name) {
-			tabsBar.querySelectorAll('.op-tab').forEach(function (t) {
-				t.classList.toggle('active', t.getAttribute('data-tab') === name);
-			});
-			panels.querySelectorAll('.op-panel').forEach(function (p) {
-				p.classList.toggle('active', p.getAttribute('data-instance') === name);
-			});
-		}
+		var panesWrap = E('div', {});
+		var panesByName = {};
 
 		instances.forEach(function (inst, idx) {
-			var dot = E('span', { 'class': 'op-tab-dot' + (inst.running ? ' running' : '') });
-			var label = E('span', {}, inst.name);
-			var editBtn = E('button', { 'class': 'op-tab-edit', title: 'Rename', type: 'button' }, '\u270E');
-			var tab = E('div', { 'class': 'op-tab', 'data-tab': inst.name }, [ dot, label, editBtn ]);
-
-			tab.addEventListener('click', function (ev) {
-				if (ev.target === editBtn) return;
-				setActive(inst.name);
-			});
-
-			editBtn.addEventListener('click', function (ev) {
-				ev.stopPropagation();
-				var input = E('input', { type: 'text', 'class': 'op-tab-name-input', value: inst.name });
-				tab.replaceChild(input, label);
-				input.focus();
-				input.select();
-
-				var settled = false;
-				function commit() {
-					if (settled) return;
-					settled = true;
-					var newName = input.value.trim();
-					if (!newName || newName === inst.name) {
-						tab.replaceChild(label, input);
-						return;
-					}
-					if (!/^[A-Za-z0-9_]+$/.test(newName)) {
-						ui.addNotification(null, E('p', 'Name may contain only letters, digits and underscore'), 'error');
-						tab.replaceChild(label, input);
-						return;
-					}
-					callRename(inst.name, newName).then(function (res) {
-						if (res && res.success) {
-							ui.addNotification(null, E('p', 'Renamed "' + inst.name + '" to "' + newName + '", reloading...'), 'info');
-							setTimeout(function () { location.reload(); }, 700);
-						} else {
-							ui.addNotification(null, E('p', (res && res.error) || 'Rename failed'), 'error');
-							tab.replaceChild(label, input);
-						}
-					});
-				}
-
-				input.addEventListener('keydown', function (ev) {
-					if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
-					if (ev.key === 'Escape') { settled = true; tab.replaceChild(label, input); }
-				});
-				input.addEventListener('blur', commit);
-			});
-
-			tabsBar.appendChild(tab);
-
-			var panel = renderInstance(inst, idx);
-			panel.classList.add('op-panel');
-			panels.appendChild(panel);
+			var pane = renderInstance(inst, idx);
+			pane.setAttribute('data-tab', inst.name);
+			pane.setAttribute('data-tab-title', inst.name);
+			if (idx === 0) pane.setAttribute('data-tab-active', 'true');
+			panesByName[inst.name] = pane;
+			panesWrap.appendChild(pane);
 		});
 
-		if (instances[0]) setActive(instances[0].name);
-
-		poll.add(function () {
-			return callGetInstances().then(function (fresh) {
-				(fresh || []).forEach(function (inst) {
-					var node = panels.querySelector('[data-instance="' + inst.name + '"]');
-					if (node && node._refresh) node._refresh(inst);
-					var dotEl = tabsBar.querySelector('.op-tab[data-tab="' + inst.name + '"] .op-tab-dot');
-					if (dotEl) dotEl.classList.toggle('running', !!inst.running);
-				});
-			});
-		}, 5);
-
-		return E('div', {}, [
+		var root = E('div', {}, [
 			E('style', {}, TAB_CSS),
 			E('div', { style: 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap' }, [
 				E('h2', { style: 'margin:0' }, 'Opera Proxy'),
@@ -381,18 +303,92 @@ return view.extend({
 					style: 'text-decoration:underline;color:var(--color-link,#2a6ebb)'
 				}, 'github.com/recrumptor/openwrt-opera-proxy-bin')
 			]),
-			E('div', {
-				style: 'display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px'
-			}, [
-				E('div', { 'class': 'cbi-section-descr', style: 'margin:0;align-self:center' },
-					'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
-				E('div', {
-					style: 'flex:1 1 24px;min-width:16px;align-self:flex-end;' +
-						'border-bottom:1px solid rgba(128,128,128,.35);height:1px'
-				}),
-				tabsBar
-			]),
-			panels
+			E('div', { 'class': 'cbi-section-descr' },
+				'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
+			panesWrap
 		]);
+
+		// panesWrap must already be attached to its parent before initTabGroup runs,
+		// since it inserts the generated <ul class="cbi-tabmenu"> as panesWrap's
+		// previous sibling — i.e. right where a native LuCI tab bar normally sits.
+		ui.tabs.initTabGroup(panesWrap.childNodes);
+
+		var menu = root.querySelector('ul.cbi-tabmenu');
+
+		function decorateTab(inst) {
+			if (!menu) return;
+			var li = menu.querySelector('li[data-tab="' + inst.name + '"]');
+			if (!li) return;
+			var a = li.querySelector('a');
+			if (!a) return;
+
+			var dot = a.querySelector('.op-tab-dot');
+			if (!dot) {
+				dot = E('span', { 'class': 'op-tab-dot' });
+				a.insertBefore(dot, a.firstChild);
+			}
+			dot.classList.toggle('running', !!inst.running);
+
+			if (!a.querySelector('.op-tab-edit')) {
+				var editBtn = E('button', { 'class': 'op-tab-edit', type: 'button', title: 'Rename' }, '\u270E');
+				editBtn.addEventListener('click', function (ev) {
+					ev.preventDefault();
+					ev.stopPropagation();
+					var label = document.createTextNode(inst.name);
+					var textNode = Array.prototype.find.call(a.childNodes, function (n) { return n.nodeType === 3; });
+					var input = E('input', { type: 'text', 'class': 'op-tab-name-input', value: inst.name });
+
+					a.replaceChild(input, textNode);
+					input.focus();
+					input.select();
+
+					var settled = false;
+					function commit() {
+						if (settled) return;
+						settled = true;
+						var newName = input.value.trim();
+						if (!newName || newName === inst.name) {
+							a.replaceChild(label, input);
+							return;
+						}
+						if (!/^[A-Za-z0-9_]+$/.test(newName)) {
+							ui.addNotification(null, E('p', 'Name may contain only letters, digits and underscore'), 'error');
+							a.replaceChild(label, input);
+							return;
+						}
+						callRename(inst.name, newName).then(function (res) {
+							if (res && res.success) {
+								ui.addNotification(null, E('p', 'Renamed "' + inst.name + '" to "' + newName + '", reloading...'), 'info');
+								setTimeout(function () { location.reload(); }, 700);
+							} else {
+								ui.addNotification(null, E('p', (res && res.error) || 'Rename failed'), 'error');
+								a.replaceChild(label, input);
+							}
+						});
+					}
+
+					input.addEventListener('keydown', function (ev) {
+						if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+						if (ev.key === 'Escape') { settled = true; a.replaceChild(label, input); }
+					});
+					input.addEventListener('blur', commit);
+				});
+				a.appendChild(editBtn);
+			}
+		}
+
+		instances.forEach(decorateTab);
+
+		poll.add(function () {
+			return callGetInstances().then(function (fresh) {
+				(fresh || []).forEach(function (inst) {
+					var pane = panesByName[inst.name];
+					if (pane && pane._refresh) pane._refresh(inst);
+					decorateTab(inst);
+				});
+			});
+		}, 5);
+
+		return root;
 	}
 });
