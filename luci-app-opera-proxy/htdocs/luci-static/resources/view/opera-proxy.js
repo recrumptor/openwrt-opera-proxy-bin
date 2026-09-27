@@ -43,17 +43,19 @@ var callVersion = rpc.declare({
 
 // Folder-tab strip in the top-right corner, so switching between instances
 // doesn't require scrolling past the other two.
-var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap}' +
+var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;margin:0 0 -1px}' +
 	'.op-tab{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px 8px 0 0;' +
-	'cursor:pointer;font-weight:600;background:rgba(128,128,128,.12)}' +
-	'.op-tab.active{background:rgba(128,128,128,.28)}' +
+	'cursor:pointer;font-weight:600;background:rgba(128,128,128,.12);' +
+	'border:1px solid rgba(128,128,128,.35);border-bottom:none;position:relative;top:1px}' +
+	'.op-tab.active{background:rgba(128,128,128,.02);z-index:2}' +
 	'.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none}' +
 	'.op-tab-dot.running{background:#2ecc71}' +
 	'.op-tab-edit{border:none;cursor:pointer;color:inherit;opacity:.85;font-size:12px;padding:1px 5px;' +
 	'line-height:1.6;border-radius:4px;background:rgba(128,128,128,.18)}' +
 	'.op-tab-edit:hover{opacity:1;background:rgba(128,128,128,.35)}' +
 	'.op-tab-name-input{width:100px;font-weight:600}' +
-	'.op-panels{margin-top:6px}' +
+	'.op-panels{border:1px solid rgba(128,128,128,.35);border-radius:0 0 8px 8px;padding:12px;' +
+	'background:rgba(128,128,128,.02)}' +
 	'.op-panel{display:none}' +
 	'.op-panel.active{display:block}';
 
