@@ -46,8 +46,8 @@ var callVersion = rpc.declare({
 var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;margin:0 0 -1px}' +
 	'.op-tab{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px 8px 0 0;' +
 	'cursor:pointer;font-weight:600;background:rgba(128,128,128,.12);' +
-	'border:1px solid rgba(128,128,128,.35);border-bottom:none;position:relative;top:1px}' +
-	'.op-tab.active{background:rgba(128,128,128,.02);z-index:2}' +
+	'border:1px solid rgba(128,128,128,.35);position:relative;top:1px}' +
+	'.op-tab.active{background:rgba(128,128,128,.02);border-bottom-color:transparent;z-index:2}' +
 	'.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none}' +
 	'.op-tab-dot.running{background:#2ecc71}' +
 	'.op-tab-edit{border:none;cursor:pointer;color:inherit;opacity:.85;font-size:12px;padding:1px 5px;' +
@@ -57,7 +57,12 @@ var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:
 	'.op-panels{border:1px solid rgba(128,128,128,.35);border-radius:0 0 8px 8px;padding:12px;' +
 	'background:rgba(128,128,128,.02)}' +
 	'.op-panel{display:none}' +
-	'.op-panel.active{display:block}';
+	'.op-panel.active{display:block}' +
+	'.op-status-row{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:16px;margin-bottom:10px}' +
+	'.op-status-title{font-weight:600;margin-bottom:4px}' +
+	'.op-status-value{margin-bottom:2px;min-height:1.3em}' +
+	'.op-status-sub{font-size:.85em;opacity:.7;min-height:1.3em}' +
+	'.op-panel button:disabled{cursor:not-allowed;opacity:.45}';
 
 // Per-instance default listen address so three freshly-enabled instances
 // don't all collide on the opera-proxy binary's own built-in default (127.0.0.1:18080).
@@ -166,10 +171,10 @@ function renderField(f, values) {
 }
 
 function statusCard(title, value, sub) {
-	return E('div', { 'class': 'cbi-value', 'style': 'display:inline-block;min-width:180px;margin-right:1em' }, [
-		E('label', { 'class': 'cbi-value-title' }, title),
-		E('div', {}, value),
-		sub ? E('div', { 'class': 'cbi-value-description' }, sub) : ''
+	return E('div', {}, [
+		E('div', { 'class': 'op-status-title' }, title),
+		E('div', { 'class': 'op-status-value' }, value),
+		E('div', { 'class': 'op-status-sub' }, sub || '\u00A0')
 	]);
 }
 
@@ -178,29 +183,32 @@ function renderInstance(inst, idx) {
 	if (!values.bind_address) values.bind_address = defaultListenFor(inst.name, idx);
 	var root = E('div', { 'class': 'cbi-section', 'data-instance': inst.name });
 
-	var statusRow = E('div', { 'class': 'status-row' });
+	var statusRow = E('div', { 'class': 'op-status-row' });
 	var actionsRow = E('div', { 'class': 'cbi-page-actions' });
+
+	var btnStart = E('button', { 'class': 'cbi-button cbi-button-positive' }, 'Start');
+	var btnStop = E('button', { 'class': 'cbi-button cbi-button-negative' }, 'Stop');
 
 	function refreshStatus(i) {
 		dom.content(statusRow, [
 			statusCard('Service state', i.running ? E('span', { style: 'color:#2ecc71' }, 'Running') : E('span', { style: 'color:#e74c3c' }, 'Stopped'),
-				i.running ? ('PID: ' + i.pid) : ''),
+				i.running ? ('PID: ' + i.pid) : '\u2013'),
 			statusCard('Proxy mode', i.socks_mode ? 'SOCKS5' : 'HTTP', 'Listen: ' + (i.listen || '\u2013')),
-			statusCard('Process memory', i.running ? ((i.rss_kb / 1024).toFixed(1) + ' MB') : '\u2013')
+			statusCard('Process memory', i.running ? ((i.rss_kb / 1024).toFixed(1) + ' MB') : '\u2013', '\u00A0')
 		]);
+		btnStart.disabled = !!i.running;
+		btnStop.disabled = !i.running;
 	}
 
 	refreshStatus(inst);
 
-	var btnStart = E('button', { 'class': 'cbi-button cbi-button-positive' }, 'Start');
-	var btnStop = E('button', { 'class': 'cbi-button cbi-button-negative' }, 'Stop');
 	var btnRestart = E('button', { 'class': 'cbi-button' }, 'Restart');
 	var btnTest = E('button', { 'class': 'cbi-button cbi-button-action' }, 'Test proxy');
 	var btnSave = E('button', { 'class': 'cbi-button cbi-button-save' }, 'Save & apply');
 	var lastAction = E('span', { 'class': 'cbi-value-description' }, '');
 
-	btnStart.addEventListener('click', function () { runAction(inst.name, 'start'); });
-	btnStop.addEventListener('click', function () { runAction(inst.name, 'stop'); });
+	btnStart.addEventListener('click', function () { if (!btnStart.disabled) runAction(inst.name, 'start'); });
+	btnStop.addEventListener('click', function () { if (!btnStop.disabled) runAction(inst.name, 'stop'); });
 	btnRestart.addEventListener('click', function () { runAction(inst.name, 'restart'); });
 	btnTest.addEventListener('click', function () { runTest(inst.name); });
 
