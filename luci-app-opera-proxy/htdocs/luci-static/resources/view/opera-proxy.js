@@ -43,19 +43,17 @@ var callVersion = rpc.declare({
 
 // Folder-tab strip in the top-right corner, so switching between instances
 // doesn't require scrolling past the other two.
-var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;margin:0 0 -1px;flex-wrap:wrap}' +
-	'.op-tab{display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--border-color-medium,#ccc);' +
-	'border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;font-weight:600;position:relative;top:1px;' +
-	'background:var(--background-color-medium,#eee)}' +
-	'.op-tab.active{background:var(--background-color-high,#fff);border-color:var(--border-color-high,#999);z-index:2}' +
+var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap}' +
+	'.op-tab{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px 8px 0 0;' +
+	'cursor:pointer;font-weight:600;background:rgba(128,128,128,.12)}' +
+	'.op-tab.active{background:rgba(128,128,128,.28)}' +
 	'.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none}' +
 	'.op-tab-dot.running{background:#2ecc71}' +
 	'.op-tab-edit{border:none;cursor:pointer;color:inherit;opacity:.85;font-size:12px;padding:1px 5px;' +
 	'line-height:1.6;border-radius:4px;background:rgba(128,128,128,.18)}' +
 	'.op-tab-edit:hover{opacity:1;background:rgba(128,128,128,.35)}' +
 	'.op-tab-name-input{width:100px;font-weight:600}' +
-	'.op-panels{border:1px solid var(--border-color-high,#999);border-radius:0 0 8px 8px;padding:12px;' +
-	'background:var(--background-color-high,#fff)}' +
+	'.op-panels{margin-top:6px}' +
 	'.op-panel{display:none}' +
 	'.op-panel.active{display:block}';
 
@@ -248,7 +246,6 @@ function renderInstance(inst, idx) {
 
 	dom.content(root, [
 		E('h3', {}, inst.name),
-		E('div', { 'class': 'cbi-section-descr' }, 'Runtime state'),
 		statusRow,
 		E('div', { 'class': 'cbi-value' }, [
 			E('label', { 'class': 'cbi-value-title' }, 'Actions'),
@@ -373,7 +370,7 @@ return view.extend({
 				}, 'github.com/recrumptor/openwrt-opera-proxy-bin')
 			]),
 			E('div', {
-				style: 'display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px'
+				style: 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'
 			}, [
 				E('div', { 'class': 'cbi-section-descr', style: 'margin:0' },
 					'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
