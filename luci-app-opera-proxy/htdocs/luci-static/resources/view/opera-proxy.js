@@ -54,7 +54,8 @@ var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:
 	'line-height:1.6;border-radius:4px;background:rgba(128,128,128,.18)}' +
 	'.op-tab-edit:hover{opacity:1;background:rgba(128,128,128,.35)}' +
 	'.op-tab-name-input{width:100px;font-weight:600}' +
-	'.op-panels{border:1px solid rgba(128,128,128,.35);border-radius:0 0 8px 8px;padding:12px;' +
+	'.op-panels{border-left:1px solid rgba(128,128,128,.35);border-right:1px solid rgba(128,128,128,.35);' +
+	'border-bottom:1px solid rgba(128,128,128,.35);border-top:none;border-radius:0 0 8px 8px;padding:12px;' +
 	'background:rgba(128,128,128,.02)}' +
 	'.op-panel{display:none}' +
 	'.op-panel.active{display:block}' +
@@ -188,6 +189,7 @@ function renderInstance(inst, idx) {
 
 	var btnStart = E('button', { 'class': 'cbi-button cbi-button-positive' }, 'Start');
 	var btnStop = E('button', { 'class': 'cbi-button cbi-button-negative' }, 'Stop');
+	var btnTest = E('button', { 'class': 'cbi-button cbi-button-action' }, 'Test proxy');
 
 	function refreshStatus(i) {
 		dom.content(statusRow, [
@@ -198,19 +200,19 @@ function renderInstance(inst, idx) {
 		]);
 		btnStart.disabled = !!i.running;
 		btnStop.disabled = !i.running;
+		btnTest.disabled = !i.running;
 	}
 
 	refreshStatus(inst);
 
 	var btnRestart = E('button', { 'class': 'cbi-button' }, 'Restart');
-	var btnTest = E('button', { 'class': 'cbi-button cbi-button-action' }, 'Test proxy');
 	var btnSave = E('button', { 'class': 'cbi-button cbi-button-save' }, 'Save & apply');
 	var lastAction = E('span', { 'class': 'cbi-value-description' }, '');
 
 	btnStart.addEventListener('click', function () { if (!btnStart.disabled) runAction(inst.name, 'start'); });
 	btnStop.addEventListener('click', function () { if (!btnStop.disabled) runAction(inst.name, 'stop'); });
 	btnRestart.addEventListener('click', function () { runAction(inst.name, 'restart'); });
-	btnTest.addEventListener('click', function () { runTest(inst.name); });
+	btnTest.addEventListener('click', function () { if (!btnTest.disabled) runTest(inst.name); });
 
 	function runAction(name, action) {
 		lastAction.textContent = 'Running ' + action + '...';
