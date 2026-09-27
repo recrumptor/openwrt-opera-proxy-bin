@@ -10,7 +10,7 @@
 		},
 		"write": {
 			"ubus": {
-				"luci.opera-proxy": [ "set_instance", "action", "test_proxy" ],
+				"luci.opera-proxy": [ "set_instance", "action", "test_proxy", "rename_instance" ],
 				"service": [ "event" ]
 			},
 			"uci": [ "opera-proxy" ]
