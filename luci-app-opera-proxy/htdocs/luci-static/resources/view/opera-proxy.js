@@ -43,10 +43,10 @@ var callVersion = rpc.declare({
 
 // Folder-tab strip in the top-right corner, so switching between instances
 // doesn't require scrolling past the other two.
-var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap;margin:0 0 -1px}' +
+var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;flex-wrap:wrap}' +
 	'.op-tab{display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px 8px 0 0;' +
 	'cursor:pointer;font-weight:600;background:rgba(128,128,128,.12);' +
-	'border:1px solid rgba(128,128,128,.35);position:relative;top:1px}' +
+	'border:1px solid rgba(128,128,128,.35)}' +
 	'.op-tab.active{background:rgba(128,128,128,.02);border-bottom-color:transparent;z-index:2}' +
 	'.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none}' +
 	'.op-tab-dot.running{background:#2ecc71}' +
@@ -382,10 +382,14 @@ return view.extend({
 				}, 'github.com/recrumptor/openwrt-opera-proxy-bin')
 			]),
 			E('div', {
-				style: 'display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px'
+				style: 'display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px'
 			}, [
-				E('div', { 'class': 'cbi-section-descr', style: 'margin:0' },
+				E('div', { 'class': 'cbi-section-descr', style: 'margin:0;align-self:center' },
 					'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
+				E('div', {
+					style: 'flex:1 1 24px;min-width:16px;align-self:flex-end;' +
+						'border-bottom:1px solid rgba(128,128,128,.35);height:1px'
+				}),
 				tabsBar
 			]),
 			panels
