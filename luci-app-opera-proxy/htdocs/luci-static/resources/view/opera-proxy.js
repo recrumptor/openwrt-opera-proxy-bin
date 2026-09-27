@@ -35,6 +35,12 @@ var callRename = rpc.declare({
 	params: ['old_name', 'new_name']
 });
 
+var callVersion = rpc.declare({
+	object: 'luci.opera-proxy',
+	method: 'get_version',
+	expect: { version: 'unknown' }
+});
+
 // Folder-tab strip in the top-right corner, so switching between instances
 // doesn't require scrolling past the other two.
 var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;margin:0 0 -1px;flex-wrap:wrap}' +
@@ -44,8 +50,9 @@ var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;margin:0 0
 	'.op-tab.active{background:var(--background-color-high,#fff);border-color:var(--border-color-high,#999);z-index:2}' +
 	'.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none}' +
 	'.op-tab-dot.running{background:#2ecc71}' +
-	'.op-tab-edit{border:none;background:transparent;cursor:pointer;opacity:.55;font-size:13px;padding:0 2px}' +
-	'.op-tab-edit:hover{opacity:1}' +
+	'.op-tab-edit{border:none;cursor:pointer;color:inherit;opacity:.85;font-size:12px;padding:1px 5px;' +
+	'line-height:1.6;border-radius:4px;background:rgba(128,128,128,.18)}' +
+	'.op-tab-edit:hover{opacity:1;background:rgba(128,128,128,.35)}' +
 	'.op-tab-name-input{width:100px;font-weight:600}' +
 	'.op-panels{border:1px solid var(--border-color-high,#999);border-radius:0 0 8px 8px;padding:12px;' +
 	'background:var(--background-color-high,#fff)}' +
@@ -262,11 +269,12 @@ function renderInstance(inst, idx) {
 
 return view.extend({
 	load: function () {
-		return callGetInstances();
+		return Promise.all([ callGetInstances(), callVersion() ]);
 	},
 
-	render: function (instances) {
-		instances = instances || [];
+	render: function (data) {
+		var instances = data[0] || [];
+		var binaryVersion = data[1] || 'unknown';
 
 		var tabsBar = E('div', { 'class': 'op-tabs' });
 		var panels = E('div', { 'class': 'op-panels' });
@@ -352,7 +360,18 @@ return view.extend({
 
 		return E('div', {}, [
 			E('style', {}, TAB_CSS),
-			E('h2', {}, 'Opera Proxy'),
+			E('div', { style: 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap' }, [
+				E('h2', { style: 'margin:0' }, 'Opera Proxy'),
+				E('span', { style: 'font-size:.8em;color:var(--color-text-secondary,#888)' }, 'version: ' + binaryVersion)
+			]),
+			E('div', { 'class': 'cbi-section-descr' }, [
+				E('a', {
+					href: 'https://github.com/recrumptor/openwrt-opera-proxy-bin',
+					target: '_blank',
+					rel: 'noreferrer',
+					style: 'text-decoration:underline;color:var(--color-link,#2a6ebb)'
+				}, 'github.com/recrumptor/openwrt-opera-proxy-bin')
+			]),
 			E('div', { 'class': 'cbi-section-descr' },
 				'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
 			tabsBar,
