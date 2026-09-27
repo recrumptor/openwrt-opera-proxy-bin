@@ -29,6 +29,29 @@ var callTest = rpc.declare({
 	params: ['name']
 });
 
+var callRename = rpc.declare({
+	object: 'luci.opera-proxy',
+	method: 'rename_instance',
+	params: ['old_name', 'new_name']
+});
+
+// Folder-tab strip in the top-right corner, so switching between instances
+// doesn't require scrolling past the other two.
+var TAB_CSS = '.op-tabs{display:flex;justify-content:flex-end;gap:4px;margin:0 0 -1px;flex-wrap:wrap}' +
+	'.op-tab{display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--border-color-medium,#ccc);' +
+	'border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;font-weight:600;position:relative;top:1px;' +
+	'background:var(--background-color-medium,#eee)}' +
+	'.op-tab.active{background:var(--background-color-high,#fff);border-color:var(--border-color-high,#999);z-index:2}' +
+	'.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex:none}' +
+	'.op-tab-dot.running{background:#2ecc71}' +
+	'.op-tab-edit{border:none;background:transparent;cursor:pointer;opacity:.55;font-size:13px;padding:0 2px}' +
+	'.op-tab-edit:hover{opacity:1}' +
+	'.op-tab-name-input{width:100px;font-weight:600}' +
+	'.op-panels{border:1px solid var(--border-color-high,#999);border-radius:0 0 8px 8px;padding:12px;' +
+	'background:var(--background-color-high,#fff)}' +
+	'.op-panel{display:none}' +
+	'.op-panel.active{display:block}';
+
 // Per-instance default listen address so three freshly-enabled instances
 // don't all collide on the opera-proxy binary's own built-in default (127.0.0.1:18080).
 var DEFAULT_LISTEN_BY_NAME = {
@@ -243,26 +266,97 @@ return view.extend({
 	},
 
 	render: function (instances) {
-		var container = E('div', { 'class': 'opera-proxy-instances' });
+		instances = instances || [];
 
-		(instances || []).forEach(function (inst, idx) {
-			container.appendChild(renderInstance(inst, idx));
+		var tabsBar = E('div', { 'class': 'op-tabs' });
+		var panels = E('div', { 'class': 'op-panels' });
+
+		function setActive(name) {
+			tabsBar.querySelectorAll('.op-tab').forEach(function (t) {
+				t.classList.toggle('active', t.getAttribute('data-tab') === name);
+			});
+			panels.querySelectorAll('.op-panel').forEach(function (p) {
+				p.classList.toggle('active', p.getAttribute('data-instance') === name);
+			});
+		}
+
+		instances.forEach(function (inst, idx) {
+			var dot = E('span', { 'class': 'op-tab-dot' + (inst.running ? ' running' : '') });
+			var label = E('span', {}, inst.name);
+			var editBtn = E('button', { 'class': 'op-tab-edit', title: 'Rename', type: 'button' }, '\u270E');
+			var tab = E('div', { 'class': 'op-tab', 'data-tab': inst.name }, [ dot, label, editBtn ]);
+
+			tab.addEventListener('click', function (ev) {
+				if (ev.target === editBtn) return;
+				setActive(inst.name);
+			});
+
+			editBtn.addEventListener('click', function (ev) {
+				ev.stopPropagation();
+				var input = E('input', { type: 'text', 'class': 'op-tab-name-input', value: inst.name });
+				tab.replaceChild(input, label);
+				input.focus();
+				input.select();
+
+				var settled = false;
+				function commit() {
+					if (settled) return;
+					settled = true;
+					var newName = input.value.trim();
+					if (!newName || newName === inst.name) {
+						tab.replaceChild(label, input);
+						return;
+					}
+					if (!/^[A-Za-z0-9_]+$/.test(newName)) {
+						ui.addNotification(null, E('p', 'Name may contain only letters, digits and underscore'), 'error');
+						tab.replaceChild(label, input);
+						return;
+					}
+					callRename(inst.name, newName).then(function (res) {
+						if (res && res.success) {
+							ui.addNotification(null, E('p', 'Renamed "' + inst.name + '" to "' + newName + '", reloading...'), 'info');
+							setTimeout(function () { location.reload(); }, 700);
+						} else {
+							ui.addNotification(null, E('p', (res && res.error) || 'Rename failed'), 'error');
+							tab.replaceChild(label, input);
+						}
+					});
+				}
+
+				input.addEventListener('keydown', function (ev) {
+					if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+					if (ev.key === 'Escape') { settled = true; tab.replaceChild(label, input); }
+				});
+				input.addEventListener('blur', commit);
+			});
+
+			tabsBar.appendChild(tab);
+
+			var panel = renderInstance(inst, idx);
+			panel.classList.add('op-panel');
+			panels.appendChild(panel);
 		});
+
+		if (instances[0]) setActive(instances[0].name);
 
 		poll.add(function () {
 			return callGetInstances().then(function (fresh) {
 				(fresh || []).forEach(function (inst) {
-					var node = container.querySelector('[data-instance="' + inst.name + '"]');
+					var node = panels.querySelector('[data-instance="' + inst.name + '"]');
 					if (node && node._refresh) node._refresh(inst);
+					var dotEl = tabsBar.querySelector('.op-tab[data-tab="' + inst.name + '"] .op-tab-dot');
+					if (dotEl) dotEl.classList.toggle('running', !!inst.running);
 				});
 			});
 		}, 5);
 
 		return E('div', {}, [
+			E('style', {}, TAB_CSS),
 			E('h2', {}, 'Opera Proxy'),
 			E('div', { 'class': 'cbi-section-descr' },
-				'Manage several opera-proxy instances. Each card below is an independent process.'),
-			container
+				'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
+			tabsBar,
+			panels
 		]);
 	}
 });
