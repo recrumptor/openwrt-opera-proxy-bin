@@ -198,6 +198,48 @@ method_test_proxy() {
 	json_dump
 }
 
+method_rename_instance() {
+	local old_name new_name
+
+	json_load "$(cat)"
+	json_get_var old_name old_name
+	json_get_var new_name new_name
+
+	if ! is_known_instance "$old_name"; then
+		json_init
+		json_add_boolean success 0
+		json_add_string error "unknown instance"
+		json_dump
+		return
+	fi
+
+	case "$new_name" in
+		''|*[!A-Za-z0-9_]*)
+			json_init
+			json_add_boolean success 0
+			json_add_string error "name must contain only letters, digits and underscore"
+			json_dump
+			return
+			;;
+	esac
+
+	if [ "$old_name" != "$new_name" ] && is_known_instance "$new_name"; then
+		json_init
+		json_add_boolean success 0
+		json_add_string error "an instance with this name already exists"
+		json_dump
+		return
+	fi
+
+	uci rename "$CFG.$old_name=$new_name"
+	uci commit "$CFG"
+	/etc/init.d/opera-proxy reload >/dev/null 2>&1
+
+	json_init
+	json_add_boolean success 1
+	json_dump
+}
+
 case "$1" in
 	list)
 		json_init
@@ -215,14 +257,19 @@ case "$1" in
 		json_add_object "test_proxy"
 		json_add_string name ""
 		json_close_object
+		json_add_object "rename_instance"
+		json_add_string old_name ""
+		json_add_string new_name ""
+		json_close_object
 		json_dump
 		;;
 	call)
 		case "$2" in
-			get_instances) method_get_instances ;;
-			set_instance)  method_set_instance ;;
-			action)        method_action ;;
-			test_proxy)    method_test_proxy ;;
+			get_instances)   method_get_instances ;;
+			set_instance)    method_set_instance ;;
+			action)          method_action ;;
+			test_proxy)      method_test_proxy ;;
+			rename_instance) method_rename_instance ;;
 			*) echo '{}'; exit 1 ;;
 		esac
 		;;
