@@ -372,9 +372,13 @@ return view.extend({
 					style: 'text-decoration:underline;color:var(--color-link,#2a6ebb)'
 				}, 'github.com/recrumptor/openwrt-opera-proxy-bin')
 			]),
-			E('div', { 'class': 'cbi-section-descr' },
-				'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
-			tabsBar,
+			E('div', {
+				style: 'display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px'
+			}, [
+				E('div', { 'class': 'cbi-section-descr', style: 'margin:0' },
+					'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
+				tabsBar
+			]),
 			panels
 		]);
 	}
