@@ -149,15 +149,15 @@ jobs:
             tar -xJf sdk.archive -C sdk --strip-components=1
           fi
 
-      # - name: Compress binary with UPX
-        # run: |
-          # echo "Размер до сжатия:"
-          # ls -l opera-proxy-bin
-          # upx --best --lzma opera-proxy-bin
+      - name: Compress binary with UPX
+        run: |
+          echo "Размер до сжатия:"
+          ls -l opera-proxy-bin
+          upx --best --lzma opera-proxy-bin
           # Проверяем целостность упакованного файла
-          # upx -t opera-proxy-bin
-          # echo "Размер после сжатия:"
-          # ls -l opera-proxy-bin
+          upx -t opera-proxy-bin
+          echo "Размер после сжатия:"
+          ls -l opera-proxy-bin
 
       - name: Prepare Package
         run: |
