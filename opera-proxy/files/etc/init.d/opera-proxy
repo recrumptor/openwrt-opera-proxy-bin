@@ -42,13 +42,4 @@ start_service() {
 	config_foreach start_instance instance
 }
 
-stop_service() {
-	return 0
-}
 
-reload_service() {
-	# USE_PROCD services don't get a granular per-instance reload for free,
-	# so a reload just restarts every enabled instance from scratch.
-	stop
-	start
-}
