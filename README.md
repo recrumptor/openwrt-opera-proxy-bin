@@ -12,31 +12,50 @@
  Требования к памяти: Размер установленного бинарного файла в /usr/bin/ составляет около 2,5 MB.  (сжат с помощью UPX для уменьшения объема).  Убедитесь, что у вас достаточно свободного места в системном разделе (Flash) или используйте Extroot.
 
 ⚙️ Конфигурация.
-Файл конфигурации: /etc/config/opera-proxy Скрипт запуска: /etc/init.d/opera-proxy
+
+Файл конфигурации: /etc/config/opera-proxy
+
+Скрипт запуска: /etc/init.d/opera-proxy
+
+Веб-интерфейс: luci-app-opera-proxy
 
 Пример конфигурации:
 ```
 config instance 'default'
   option enabled '1'
-  option args '--bind-address 127.0.0.1:18081'
+  option args '-bind-address 127.0.0.1:18081'
 
 config instance 'Americas'
   option enabled '1'
-  option args '--bind-address 127.0.0.1:18082 -country AM -socks-mode'
+  option args '-bind-address 127.0.0.1:18082 -country AM -socks-mode'
 
 config instance 'Asia'
   option enabled '1'
-  option args '--bind-address 127.0.0.1:18083 -country AS -socks-mode'
+  option args '-bind-address 127.0.0.1:18083 -country AS -socks-mode'
 ```
-Создаст один http и два socks прокси сервера
+В данном примере будут запущены три независимых экземпляра: один HTTP-прокси и два SOCKS-прокси.
+### 🖥️ LuCI
+
+Для управления Opera Proxy через веб-интерфейс OpenWrt добавлен пакет **`luci-app-opera-proxy`**.
+
+После установки пакет добавляет соответствующий раздел в **LuCI**, где можно управлять отдельными экземплярами Opera Proxy: включать и отключать их, задавать параметры запуска и сетевой адрес/порт.
+Выполнять тестирование.
+
+Настройки сохраняются в:
+
+```text
+/etc/config/opera-proxy
+```
+
+Каждый экземпляр работает как отдельный процесс `procd`, поэтому несколько прокси можно запускать одновременно с разными параметрами и портами.
 
 ⚙️ Установка на OpenWrt25.
 
-Скопировать apk-файл нужной архитектуры в папку tmp
+Скопировать apk-файлы нужной архитектуры в папку tmp
 
 Выполнить в консоли:
 ```
-apk add --allow-untrusted /tmp/opera-proxy-*.apk
+apk add --allow-untrusted /tmp/opera-proxy-*.apk /tmp/luci-app-opera-proxy-*.apk
 ```
 
   Подробнее про настройки можно прочитать на странице https://github.com/Alexey71/opera-proxy
@@ -54,3 +73,5 @@ apk add --allow-untrusted /tmp/opera-proxy-*.apk
       "server_port": 18081
     }
 ```
+## Скриншоты (luci-app-opera-proxy, OpenWrt 25.12.5)
+<p float="left"> <img src="assets/opera1.jpg" width="880" /> </p>
