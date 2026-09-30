@@ -1,11 +1,11 @@
 config instance 'default'
   option enabled '1'
-  option args '--bind-address 127.0.0.1:18081'
+  option args '-bind-address 127.0.0.1:18081'
 
 config instance 'Americas'
   option enabled '0'
-  option args '--bind-address 127.0.0.1:18082 -country AM -socks-mode'
+  option args '-bind-address 127.0.0.1:18082 -country AM -socks-mode'
 
 config instance 'Asia'
   option enabled '0'
-  option args '--bind-address 127.0.0.1:18083 -country AS -socks-mode'
+  option args '-bind-address 127.0.0.1:18083 -country AS -socks-mode'
