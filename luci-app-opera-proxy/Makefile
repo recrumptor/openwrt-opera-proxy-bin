@@ -13,7 +13,7 @@ define Package/$(PKG_NAME)
 	CATEGORY:=LuCI
 	SUBMENU:=3. Applications
 	TITLE:=LuCI support for opera-proxy (multi-instance)
-	DEPENDS:=+opera-proxy +rpcd +luci-base +luci-compat +curl
+	DEPENDS:=+opera-proxy +rpcd +luci-base +curl
 	PKGARCH:=all
 endef
 
