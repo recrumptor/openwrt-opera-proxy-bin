@@ -99,8 +99,12 @@ jobs:
           # Клонируем ПРАВИЛЬНЫЙ репозиторий с исходным кодом прокси
           git clone https://github.com/Alexey71/opera-proxy.git source
           cd source
-          # Собираем бинарник под целевую архитектуру роутера
-          GOOS=linux GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build -ldflags="-s -w" -o ../opera-proxy-bin
+          # CGO_ENABLED=0 обязателен: без него для x86_64 (хост раннера тоже linux/amd64,
+          # то есть это НЕ кросс-компиляция) Go по умолчанию включает cgo и линкует
+          # бинарник динамически с glibc раннера — то есть libc.so.6, которого попросту
+          # нет в musl-окружении OpenWrt. mipsel/aarch64 собираются статически "бесплатно",
+          # потому что для них это настоящая кросс-компиляция и cgo сам по себе выключен.
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build -ldflags="-s -w" -o ../opera-proxy-bin
           cd ..
 
       - name: Install dependencies
@@ -149,15 +153,15 @@ jobs:
             tar -xJf sdk.archive -C sdk --strip-components=1
           fi
 
-      - name: Compress binary with UPX
-        run: |
-          echo "Размер до сжатия:"
-          ls -l opera-proxy-bin
-          upx --best --lzma opera-proxy-bin
+      # - name: Compress binary with UPX
+        # run: |
+          # echo "Размер до сжатия:"
+          # ls -l opera-proxy-bin
+          # upx --best --lzma opera-proxy-bin
           # Проверяем целостность упакованного файла
-          upx -t opera-proxy-bin
-          echo "Размер после сжатия:"
-          ls -l opera-proxy-bin
+          # upx -t opera-proxy-bin
+          # echo "Размер после сжатия:"
+          # ls -l opera-proxy-bin
 
       - name: Prepare Package
         run: |
