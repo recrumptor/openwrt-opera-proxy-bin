@@ -1,0 +1,50 @@
+--- a/main.go
++++ b/main.go
+@@ -35,9 +35,6 @@
+ 	clog "github.com/Alexey71/opera-proxy/log"
+ 	"github.com/Alexey71/opera-proxy/resolver"
+ 	se "github.com/Alexey71/opera-proxy/seclient"
+-
+-	_ "golang.org/x/crypto/x509roots/fallback"
+-	"golang.org/x/crypto/x509roots/fallback/bundle"
+ )
+ 
+ const (
+@@ -427,9 +424,9 @@
+ 
+ // buildCAPool constructs the x509 cert pool used for all TLS verification.
+ // When -cafile is given, only that file is loaded (useful for custom/corporate CAs).
+-// Otherwise the bundled Mozilla NSS root store is used, which includes all
+-// major roots and supports AddCertWithConstraint for name-constrained CAs —
+-// strictly better than a plain PEM file.
++// Otherwise the system root store is used (on OpenWrt: the ca-bundle package,
++// /etc/ssl/certs/ca-certificates.crt), so no root certificates are embedded
++// into the binary.
+ func buildCAPool(caFile string, logger *clog.CondLogger) (*x509.CertPool, int) {
+ 	pool := x509.NewCertPool()
+ 	if caFile != "" {
+@@ -444,19 +441,12 @@
+ 		}
+ 		return pool, 0
+ 	}
+-	for c := range bundle.Roots() {
+-		cert, err := x509.ParseCertificate(c.Certificate)
+-		if err != nil {
+-			logger.Error("Unable to parse bundled certificate: %v", err)
+-			return nil, 15
+-		}
+-		if c.Constraint == nil {
+-			pool.AddCert(cert)
+-		} else {
+-			pool.AddCertWithConstraint(cert, c.Constraint)
+-		}
++	sysPool, err := x509.SystemCertPool()
++	if err != nil {
++		logger.Error("Can't load system CA pool: %v", err)
++		return nil, 15
+ 	}
+-	return pool, 0
++	return sysPool, 0
+ }
+ 
+ func normalizeAPIProxy(raw string) (string, error) {
