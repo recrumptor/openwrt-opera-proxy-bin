@@ -13,6 +13,7 @@ define Package/$(PKG_NAME)
     CATEGORY:=Network
     TITLE:=Opera Proxy client
     URL:=https://github.com/Snawoot/opera-proxy
+	DEPENDS:=+ca-bundle
     ARCH:=mipsel_24kc
 endef
 
