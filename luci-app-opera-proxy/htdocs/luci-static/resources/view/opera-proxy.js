@@ -81,73 +81,89 @@ function defaultListenFor(name, idx) {
 // "Advanced settings" section by default, but can be moved to the main form
 // (and back) with the per-row checkbox on the right side of every field.
 var FIELDS = [
-	// ---- Main settings (visible by default) ----
-	{ key: 'country', flag: '-country', type: 'select', def: 'EU',
+	// ---- Main settings (fixed in the main form, no move checkbox) ----
+	{ key: 'country', flag: '-country', type: 'select', def: 'EU', fixed: true,
 	  options: [['EU', 'Europe'], ['AS', 'Asia'], ['AM', 'Americas']] },
-	{ key: 'socks_mode', flag: '-socks-mode', type: 'flag',
+	{ key: 'socks_mode', flag: '-socks-mode', type: 'flag', fixed: true,
 	  label: 'SOCKS5 mode', hint: 'Enabled = SOCKS5 proxy. Disabled = HTTP proxy.' },
-	{ key: 'bind_address', flag: '-bind-address', type: 'text', label: 'Listen address' },
-	{ key: 'verbosity', flag: '-verbosity', type: 'text', def: '20', label: 'Logging verbosity',
-	  hint: '10 debug, 20 info, 30 warning, 40 error, 50 critical, 60 silent' },
-	{ key: 'timeout', flag: '-timeout', type: 'text', def: '10s', label: 'Request timeout' },
-	{ key: 'refresh', flag: '-refresh', type: 'text', def: '4h', label: 'Endpoint refresh interval' },
-	{ key: 'server_selection', flag: '-server-selection', type: 'select', def: 'fastest',
+	{ key: 'bind_address', flag: '-bind-address', type: 'text', fixed: true, label: 'Listen address' },
+	{ key: 'server_selection', flag: '-server-selection', type: 'select', def: 'fastest', fixed: true,
 	  options: [['first', 'first'], ['random', 'random'], ['fastest', 'fastest']], label: 'Server selection' },
-	{ key: 'proxy', flag: '-proxy', type: 'text', label: 'Upstream proxy', placeholder: 'socks5://127.0.0.1:1080' },
-	{ key: 'api_proxy', flag: '-api-proxy', type: 'text', label: 'API proxy', placeholder: 'http://127.0.0.1:8080' },
-	{ key: 'api_proxy_list_url', flag: '-api-proxy-list-url', type: 'text', label: 'API proxy list URL',
-	  placeholder: 'https://example.com/proxy-list.txt' },
-	{ key: 'fake_sni', flag: '-fake-SNI', type: 'text', label: 'Fake SNI', placeholder: 'www.google.com' },
-	{ key: 'override_proxy_address', flag: '-override-proxy-address', type: 'text', label: 'Override proxy address',
-	  placeholder: 'host:port, e.g. 1.2.3.4:443' },
 
-	// ---- Advanced settings (hidden in the collapsible section by default) ----
+	// ---- Everything else: lives in the collapsible "Advanced settings"
+	// section, ordered alphabetically by CLI flag exactly as in the upstream
+	// README "List of arguments". Fixed main fields above are interleaved
+	// into this order too (country, socks-mode, bind-address, server-selection),
+	// which keeps FIELD_ORDER consistent for sorted re-insertion.
+	{ key: 'api_address', flag: '-api-address', type: 'text', adv: true, label: 'API address',
+	  placeholder: 'IP address', hint: 'Override IP address of api2.sec-tunnel.com' },
+	{ key: 'api_client_type', flag: '-api-client-type', type: 'text', adv: true, label: 'API client type',
+	  placeholder: 'se0316' },
+	{ key: 'api_client_version', flag: '-api-client-version', type: 'text', adv: true, label: 'API client version',
+	  placeholder: 'Stable 114.0.5282.21' },
+	{ key: 'api_login', flag: '-api-login', type: 'text', adv: true, label: 'API login', placeholder: 'se0316' },
+	{ key: 'api_password', flag: '-api-password', type: 'text', adv: true, label: 'API password' },
+	{ key: 'api_proxy', flag: '-api-proxy', type: 'text', adv: true, label: 'API proxy',
+	  placeholder: 'http://127.0.0.1:8080', hint: 'Additional proxy server used to access the SurfEasy API' },
+	{ key: 'api_proxy_file', flag: '-api-proxy-file', type: 'text', adv: true, label: 'API proxy file',
+	  placeholder: '/etc/opera-proxy/proxies.txt',
+	  hint: 'Candidate proxies for SurfEasy API access, tried in order until init/discover succeeds' },
+	{ key: 'api_proxy_list_url', flag: '-api-proxy-list-url', type: 'text', adv: true, label: 'API proxy list URL',
+	  placeholder: 'https://example.com/proxy-list.txt',
+	  hint: 'URL of a text file with candidate proxies; falls back to -api-proxy-file if download fails' },
+	{ key: 'api_proxy_parallel', flag: '-api-proxy-parallel', type: 'text', adv: true, label: 'API proxy parallel',
+	  placeholder: '15', hint: 'How many API proxy candidates are tested in parallel' },
+	{ key: 'api_user_agent', flag: '-api-user-agent', type: 'text', adv: true, label: 'API user agent',
+	  placeholder: 'Mozilla/5.0 ... OPR/114.0.0.0' },
+	{ key: 'bootstrap_dns', flag: '-bootstrap-dns', type: 'text', adv: true, label: 'Bootstrap DNS',
+	  placeholder: 'https://1.1.1.1/dns-query,tls://9.9.9.9:853',
+	  hint: 'Comma-separated DNS/DoH/DoT resolvers for initial SurfEasy API discovery (dns://, https://, tls://, tcp://)' },
+	{ key: 'cafile', flag: '-cafile', type: 'text', adv: true, label: 'CA certificate bundle',
+	  placeholder: '/etc/ssl/certs/ca-certificates.crt', hint: 'Custom CA certificate bundle file' },
 	{ key: 'discover_csv', flag: '-discover-csv', type: 'text', adv: true, label: 'Discover CSV file',
 	  placeholder: '/etc/opera-proxy/proxies.csv',
 	  hint: 'Read proxy endpoints from CSV instead of SurfEasy discover API' },
+	{ key: 'fake_sni', flag: '-fake-SNI', type: 'text', adv: true, label: 'Fake SNI', placeholder: 'www.google.com',
+	  hint: 'Domain name used as SNI in outbound TLS and tunneled TLS ClientHello where possible' },
+	{ key: 'init_retries', flag: '-init-retries', type: 'text', adv: true, label: 'Init retries',
+	  placeholder: '0', hint: 'Number of attempts for initialization steps, 0 = unlimited retry' },
+	{ key: 'init_retry_interval', flag: '-init-retry-interval', type: 'text', adv: true, label: 'Init retry interval',
+	  placeholder: '5s', hint: 'Delay between initialization retries' },
+	{ key: 'override_proxy_address', flag: '-override-proxy-address', type: 'text', adv: true,
+	  label: 'Override proxy address', placeholder: 'host:port, e.g. 1.2.3.4:443',
+	  hint: 'Use a fixed proxy address instead of the server address returned by SurfEasy API' },
+	{ key: 'proxy', flag: '-proxy', type: 'text', adv: true, label: 'Upstream proxy',
+	  placeholder: 'socks5://127.0.0.1:1080',
+	  hint: 'Base proxy for all dial-outs: <http|https|socks5|socks5h>://[login:password@]host[:port]' },
 	{ key: 'proxy_bypass', flag: '-proxy-bypass', type: 'text', adv: true, label: 'Proxy bypass',
 	  placeholder: '*.example.com,api2.sec-tunnel.com',
 	  hint: 'Comma-separated host/URL patterns that bypass the Opera proxy and connect directly' },
 	{ key: 'proxy_blacklist', flag: '-proxy-blacklist', type: 'text', adv: true, label: 'Proxy blacklist file',
 	  placeholder: '/etc/opera-proxy/blacklist.txt',
 	  hint: 'File with blacklisted proxy addresses, one host[:port] per line' },
-	{ key: 'api_proxy_file', flag: '-api-proxy-file', type: 'text', adv: true, label: 'API proxy file',
-	  placeholder: '/etc/opera-proxy/proxies.txt',
-	  hint: 'Candidate proxies for SurfEasy API access, tried in order until init/discover succeeds' },
-	{ key: 'api_proxy_parallel', flag: '-api-proxy-parallel', type: 'text', adv: true, label: 'API proxy parallel',
-	  placeholder: '15', hint: 'How many API proxy candidates are tested in parallel' },
-	{ key: 'api_address', flag: '-api-address', type: 'text', adv: true, label: 'API address',
-	  placeholder: 'IP address', hint: 'Override IP address of api2.sec-tunnel.com' },
-	{ key: 'bootstrap_dns', flag: '-bootstrap-dns', type: 'text', adv: true, label: 'Bootstrap DNS',
-	  placeholder: 'https://1.1.1.1/dns-query,tls://9.9.9.9:853',
-	  hint: 'Comma-separated DNS/DoH/DoT resolvers for initial SurfEasy API discovery (dns://, https://, tls://, tcp://)' },
-	{ key: 'api_login', flag: '-api-login', type: 'text', adv: true, label: 'API login', placeholder: 'se0316' },
-	{ key: 'api_password', flag: '-api-password', type: 'text', adv: true, label: 'API password' },
-	{ key: 'api_client_type', flag: '-api-client-type', type: 'text', adv: true, label: 'API client type',
-	  placeholder: 'se0316' },
-	{ key: 'api_client_version', flag: '-api-client-version', type: 'text', adv: true, label: 'API client version',
-	  placeholder: 'Stable 114.0.5282.21' },
-	{ key: 'api_user_agent', flag: '-api-user-agent', type: 'text', adv: true, label: 'API user agent',
-	  placeholder: 'Mozilla/5.0 ... OPR/114.0.0.0' },
-	{ key: 'cafile', flag: '-cafile', type: 'text', adv: true, label: 'CA certificate bundle',
-	  placeholder: '/etc/ssl/certs/ca-certificates.crt', hint: 'Custom CA certificate bundle file' },
-	{ key: 'init_retries', flag: '-init-retries', type: 'text', adv: true, label: 'Init retries',
-	  placeholder: '0', hint: 'Number of attempts for initialization steps, 0 = unlimited retry' },
-	{ key: 'init_retry_interval', flag: '-init-retry-interval', type: 'text', adv: true, label: 'Init retry interval',
-	  placeholder: '5s', hint: 'Delay between initialization retries' },
+	{ key: 'refresh', flag: '-refresh', type: 'text', adv: true, def: '4h', label: 'Endpoint refresh interval' },
 	{ key: 'refresh_retry', flag: '-refresh-retry', type: 'text', adv: true, label: 'Refresh retry interval',
 	  placeholder: '5s', hint: 'Login refresh retry interval' },
-	{ key: 'server_selection_timeout', flag: '-server-selection-timeout', type: 'text', adv: true,
-	  label: 'Server selection timeout', placeholder: '30s',
-	  hint: 'Timeout for the server selection function to produce a result' },
+	{ key: 'server_selection_dl_limit', flag: '-server-selection-dl-limit', type: 'text', adv: true,
+	  label: 'Server selection DL limit', placeholder: '0',
+	  hint: 'Restrict downloaded bytes per connection for fastest server selection, 0 = unlimited' },
 	{ key: 'server_selection_test_url', flag: '-server-selection-test-url', type: 'text', adv: true,
 	  label: 'Server selection test URL',
 	  placeholder: 'https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js',
 	  hint: 'URL used for the download benchmark of the fastest server selection policy' },
-	{ key: 'server_selection_dl_limit', flag: '-server-selection-dl-limit', type: 'text', adv: true,
-	  label: 'Server selection DL limit', placeholder: '0',
-	  hint: 'Restrict downloaded bytes per connection for fastest server selection, 0 = unlimited' }
+	{ key: 'server_selection_timeout', flag: '-server-selection-timeout', type: 'text', adv: true,
+	  label: 'Server selection timeout', placeholder: '30s',
+	  hint: 'Timeout for the server selection function to produce a result' },
+	{ key: 'timeout', flag: '-timeout', type: 'text', adv: true, def: '10s', label: 'Request timeout' },
+	{ key: 'verbosity', flag: '-verbosity', type: 'text', adv: true, def: '20', label: 'Logging verbosity',
+	  hint: '10 debug, 20 info, 30 warning, 40 error, 50 critical, 60 silent' }
 ];
+
+// Alphabetical order index (matches the FIELDS order above) used to re-insert
+// a row at its proper sorted slot when it is moved back into the advanced
+// section, instead of dropping it at the end.
+var FIELD_ORDER = {};
+FIELDS.forEach(function (f, i) { FIELD_ORDER[f.key] = i; });
 
 // Per-browser layout state: which fields the user moved between the main form
 // and the advanced section. Keyed by field key only (applies to all instances),
@@ -249,6 +265,18 @@ function renderField(f, values, inAdv, onMove) {
 		});
 	}
 
+	// Fixed fields (country, SOCKS5 mode, listen address, server selection)
+	// have no move checkbox: they always stay in the main form.
+	if (f.fixed) {
+		return E('div', { 'class': 'cbi-value', 'data-key': f.key }, [
+			E('label', { 'class': 'cbi-value-title' }, f.label || f.key),
+			E('div', { 'class': 'cbi-value-field' }, [
+				input,
+				f.hint ? E('div', { 'class': 'cbi-value-description' }, f.hint) : ''
+			])
+		]);
+	}
+
 	var moveChk = E('input', {
 		type: 'checkbox', 'class': 'op-adv-toggle',
 		title: inAdv ? 'Move to main settings' : 'Move to advanced settings',
@@ -258,7 +286,7 @@ function renderField(f, values, inAdv, onMove) {
 		onMove(f, moveChk.checked, moveChk);
 	});
 
-	return E('div', { 'class': 'cbi-value' }, [
+	return E('div', { 'class': 'cbi-value', 'data-key': f.key }, [
 		E('label', { 'class': 'cbi-value-title' }, f.label || f.key),
 		E('div', { 'class': 'cbi-value-field' }, [
 			E('div', { 'class': 'op-cbi-flex' }, [ input, moveChk ]),
@@ -360,7 +388,23 @@ function renderInstance(inst, idx) {
 			arrayToggle(st.adv, f.key, toAdv);
 		}
 		saveAdvState(st);
-		(toAdv ? advBody : mainForm).appendChild(fieldRows[f.key]);
+		if (toAdv) {
+			// Insert at the field's alphabetical slot so round-tripping a row
+			// between sections always lands it back in the same position.
+			var row = fieldRows[f.key];
+			var before = null;
+			var kids = advBody.children;
+			for (var i = 0; i < kids.length; i++) {
+				var k = kids[i].getAttribute('data-key');
+				if (k !== null && FIELD_ORDER[k] > FIELD_ORDER[f.key]) {
+					before = kids[i];
+					break;
+				}
+			}
+			advBody.insertBefore(row, before);
+		} else {
+			mainForm.appendChild(fieldRows[f.key]);
+		}
 		moveChk.title = toAdv ? 'Move to main settings' : 'Move to advanced settings';
 		// Open the advanced section so the moved row is actually visible.
 		if (toAdv) setAdvOpen(true);
@@ -368,10 +412,16 @@ function renderInstance(inst, idx) {
 
 	var fieldRows = {};
 	FIELDS.forEach(function (f) {
-		var inAdv = isAdvancedPlaced(f);
+		var inAdv = !f.fixed && isAdvancedPlaced(f);
 		var row = renderField(f, values, inAdv, onMove);
 		fieldRows[f.key] = row;
-		(inAdv ? advBody : mainForm).appendChild(row);
+		if (inAdv) {
+			// FIELDS is already in README alphabetical order, so plain
+			// appends produce a sorted advanced section.
+			advBody.appendChild(row);
+		} else {
+			mainForm.appendChild(row);
+		}
 	});
 
 	btnSave.addEventListener('click', function () {
