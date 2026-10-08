@@ -55,7 +55,14 @@ var TAB_CSS = '.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e7
 	'.op-status-title{font-weight:600;margin-bottom:4px}' +
 	'.op-status-value{margin-bottom:2px;min-height:1.3em}' +
 	'.op-status-sub{font-size:.85em;opacity:.7;min-height:1.3em}' +
-	'.op-panel button:disabled{cursor:not-allowed;opacity:.45}';
+	'.op-panel button:disabled{cursor:not-allowed;opacity:.45}' +
+	// Advanced-section chrome: collapsible header + right-side move checkbox.
+	'.op-adv-header{cursor:pointer;user-select:none;margin-top:14px}' +
+	'.op-adv-header:hover{opacity:.75}' +
+	'.op-adv-body{padding-left:2px}' +
+	'.op-cbi-flex{display:flex;align-items:flex-start;gap:8px}' +
+	'.op-cbi-flex>.cbi-input-text,.op-cbi-flex>.cbi-input-select{flex:1;min-width:0}' +
+	'.op-adv-toggle{flex:none !important;margin-top:6px !important;cursor:pointer}';
 
 // Per-instance default listen address so three freshly-enabled instances
 // don't all collide on the opera-proxy binary's own built-in default (127.0.0.1:18080).
@@ -70,7 +77,11 @@ function defaultListenFor(name, idx) {
 }
 
 // Maps form fields <-> opera-proxy CLI flags inside the single 'args' UCI option.
+// Fields marked adv:true are "advanced": they live in the collapsible
+// "Advanced settings" section by default, but can be moved to the main form
+// (and back) with the per-row checkbox on the right side of every field.
 var FIELDS = [
+	// ---- Main settings (visible by default) ----
 	{ key: 'country', flag: '-country', type: 'select', def: 'EU',
 	  options: [['EU', 'Europe'], ['AS', 'Asia'], ['AM', 'Americas']] },
 	{ key: 'socks_mode', flag: '-socks-mode', type: 'flag',
@@ -88,8 +99,89 @@ var FIELDS = [
 	  placeholder: 'https://example.com/proxy-list.txt' },
 	{ key: 'fake_sni', flag: '-fake-SNI', type: 'text', label: 'Fake SNI', placeholder: 'www.google.com' },
 	{ key: 'override_proxy_address', flag: '-override-proxy-address', type: 'text', label: 'Override proxy address',
-	  placeholder: 'host:port, e.g. 1.2.3.4:443' }
+	  placeholder: 'host:port, e.g. 1.2.3.4:443' },
+
+	// ---- Advanced settings (hidden in the collapsible section by default) ----
+	{ key: 'discover_csv', flag: '-discover-csv', type: 'text', adv: true, label: 'Discover CSV file',
+	  placeholder: '/etc/opera-proxy/proxies.csv',
+	  hint: 'Read proxy endpoints from CSV instead of SurfEasy discover API' },
+	{ key: 'proxy_bypass', flag: '-proxy-bypass', type: 'text', adv: true, label: 'Proxy bypass',
+	  placeholder: '*.example.com,api2.sec-tunnel.com',
+	  hint: 'Comma-separated host/URL patterns that bypass the Opera proxy and connect directly' },
+	{ key: 'proxy_blacklist', flag: '-proxy-blacklist', type: 'text', adv: true, label: 'Proxy blacklist file',
+	  placeholder: '/etc/opera-proxy/blacklist.txt',
+	  hint: 'File with blacklisted proxy addresses, one host[:port] per line' },
+	{ key: 'api_proxy_file', flag: '-api-proxy-file', type: 'text', adv: true, label: 'API proxy file',
+	  placeholder: '/etc/opera-proxy/proxies.txt',
+	  hint: 'Candidate proxies for SurfEasy API access, tried in order until init/discover succeeds' },
+	{ key: 'api_proxy_parallel', flag: '-api-proxy-parallel', type: 'text', adv: true, label: 'API proxy parallel',
+	  placeholder: '15', hint: 'How many API proxy candidates are tested in parallel' },
+	{ key: 'api_address', flag: '-api-address', type: 'text', adv: true, label: 'API address',
+	  placeholder: 'IP address', hint: 'Override IP address of api2.sec-tunnel.com' },
+	{ key: 'bootstrap_dns', flag: '-bootstrap-dns', type: 'text', adv: true, label: 'Bootstrap DNS',
+	  placeholder: 'https://1.1.1.1/dns-query,tls://9.9.9.9:853',
+	  hint: 'Comma-separated DNS/DoH/DoT resolvers for initial SurfEasy API discovery (dns://, https://, tls://, tcp://)' },
+	{ key: 'api_login', flag: '-api-login', type: 'text', adv: true, label: 'API login', placeholder: 'se0316' },
+	{ key: 'api_password', flag: '-api-password', type: 'text', adv: true, label: 'API password' },
+	{ key: 'api_client_type', flag: '-api-client-type', type: 'text', adv: true, label: 'API client type',
+	  placeholder: 'se0316' },
+	{ key: 'api_client_version', flag: '-api-client-version', type: 'text', adv: true, label: 'API client version',
+	  placeholder: 'Stable 114.0.5282.21' },
+	{ key: 'api_user_agent', flag: '-api-user-agent', type: 'text', adv: true, label: 'API user agent',
+	  placeholder: 'Mozilla/5.0 ... OPR/114.0.0.0' },
+	{ key: 'cafile', flag: '-cafile', type: 'text', adv: true, label: 'CA certificate bundle',
+	  placeholder: '/etc/ssl/certs/ca-certificates.crt', hint: 'Custom CA certificate bundle file' },
+	{ key: 'init_retries', flag: '-init-retries', type: 'text', adv: true, label: 'Init retries',
+	  placeholder: '0', hint: 'Number of attempts for initialization steps, 0 = unlimited retry' },
+	{ key: 'init_retry_interval', flag: '-init-retry-interval', type: 'text', adv: true, label: 'Init retry interval',
+	  placeholder: '5s', hint: 'Delay between initialization retries' },
+	{ key: 'refresh_retry', flag: '-refresh-retry', type: 'text', adv: true, label: 'Refresh retry interval',
+	  placeholder: '5s', hint: 'Login refresh retry interval' },
+	{ key: 'server_selection_timeout', flag: '-server-selection-timeout', type: 'text', adv: true,
+	  label: 'Server selection timeout', placeholder: '30s',
+	  hint: 'Timeout for the server selection function to produce a result' },
+	{ key: 'server_selection_test_url', flag: '-server-selection-test-url', type: 'text', adv: true,
+	  label: 'Server selection test URL',
+	  placeholder: 'https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js',
+	  hint: 'URL used for the download benchmark of the fastest server selection policy' },
+	{ key: 'server_selection_dl_limit', flag: '-server-selection-dl-limit', type: 'text', adv: true,
+	  label: 'Server selection DL limit', placeholder: '0',
+	  hint: 'Restrict downloaded bytes per connection for fastest server selection, 0 = unlimited' }
 ];
+
+// Per-browser layout state: which fields the user moved between the main form
+// and the advanced section. Keyed by field key only (applies to all instances),
+// so the choice survives page reloads without touching UCI/RPC.
+var ADV_STATE_KEY = 'opera-proxy-field-layout';
+
+function loadAdvState() {
+	try {
+		return JSON.parse(localStorage.getItem(ADV_STATE_KEY)) || { adv: [], main: [] };
+	} catch (e) {
+		return { adv: [], main: [] };
+	}
+}
+
+function saveAdvState(st) {
+	try {
+		localStorage.setItem(ADV_STATE_KEY, JSON.stringify(st));
+	} catch (e) {}
+}
+
+function arrayToggle(arr, key, on) {
+	var i = arr.indexOf(key);
+	if (on && i === -1) arr.push(key);
+	if (!on && i !== -1) arr.splice(i, 1);
+}
+
+// Where should this field live right now? Advanced by default if marked adv,
+// unless the user explicitly moved it to the main form, and vice versa.
+function isAdvancedPlaced(f) {
+	var st = loadAdvState();
+	if (f.adv)
+		return st.main.indexOf(f.key) === -1;
+	return st.adv.indexOf(f.key) !== -1;
+}
 
 function parseArgs(str) {
 	var tokens = (str || '').trim().split(/\s+/).filter(Boolean);
@@ -133,7 +225,10 @@ function readForm(root) {
 	return values;
 }
 
-function renderField(f, values) {
+// Renders one cbi-value row. The small checkbox on the right edge moves the
+// row between the main form and the advanced section; its checked state always
+// mirrors the current placement (checked = lives in advanced).
+function renderField(f, values, inAdv, onMove) {
 	var val = values[f.key];
 	var input;
 
@@ -154,10 +249,19 @@ function renderField(f, values) {
 		});
 	}
 
+	var moveChk = E('input', {
+		type: 'checkbox', 'class': 'op-adv-toggle',
+		title: inAdv ? 'Move to main settings' : 'Move to advanced settings',
+		checked: inAdv ? '' : null
+	});
+	moveChk.addEventListener('change', function () {
+		onMove(f, moveChk.checked, moveChk);
+	});
+
 	return E('div', { 'class': 'cbi-value' }, [
 		E('label', { 'class': 'cbi-value-title' }, f.label || f.key),
 		E('div', { 'class': 'cbi-value-field' }, [
-			input,
+			E('div', { 'class': 'op-cbi-flex' }, [ input, moveChk ]),
 			f.hint ? E('div', { 'class': 'cbi-value-description' }, f.hint) : ''
 		])
 	]);
@@ -167,7 +271,7 @@ function statusCard(title, value, sub) {
 	return E('div', {}, [
 		E('div', { 'class': 'op-status-title' }, title),
 		E('div', { 'class': 'op-status-value' }, value),
-		E('div', { 'class': 'op-status-sub' }, sub || '\u00A0')
+		E('div', { 'class': 'op-status-sub' }, sub || ' ')
 	]);
 }
 
@@ -186,9 +290,9 @@ function renderInstance(inst, idx) {
 	function refreshStatus(i) {
 		dom.content(statusRow, [
 			statusCard('Service state', i.running ? E('span', { style: 'color:#2ecc71' }, 'Running') : E('span', { style: 'color:#e74c3c' }, 'Stopped'),
-				i.running ? ('PID: ' + i.pid) : '\u2013'),
-			statusCard('Proxy mode', i.socks_mode ? 'SOCKS5' : 'HTTP', 'Listen: ' + (i.listen || '\u2013')),
-			statusCard('Process memory', i.running ? ((i.rss_kb / 1024).toFixed(1) + ' MB') : '\u2013', '\u00A0')
+				i.running ? ('PID: ' + i.pid) : '–'),
+			statusCard('Proxy mode', i.socks_mode ? 'SOCKS5' : 'HTTP', 'Listen: ' + (i.listen || '–')),
+			statusCard('Process memory', i.running ? ((i.rss_kb / 1024).toFixed(1) + ' MB') : '–', ' ')
 		]);
 		btnStart.disabled = !!i.running;
 		btnStop.disabled = !i.running;
@@ -228,6 +332,48 @@ function renderInstance(inst, idx) {
 
 	var enabledInput = E('input', { type: 'checkbox', 'data-field': '__enabled', checked: inst.enabled ? '' : null });
 
+	// Main form and collapsible advanced section. Rows are moved between
+	// mainForm and advBody purely by DOM reparenting; readForm()/buildArgs()
+	// keep working because they address fields by data-field, not by position.
+	var mainForm = E('div', {});
+	var advBody = E('div', { 'class': 'op-adv-body', style: 'display:none' });
+	var advArrow = E('span', {}, '▸ ');
+	var advHeader = E('h4', { 'class': 'op-adv-header' }, [ advArrow, 'Advanced settings' ]);
+
+	function setAdvOpen(open) {
+		advBody.style.display = open ? '' : 'none';
+		advArrow.textContent = open ? '▾ ' : '▸ ';
+	}
+	advHeader.addEventListener('click', function () {
+		setAdvOpen(advBody.style.display === 'none');
+	});
+
+	var advSection = E('div', {}, [ advHeader, advBody ]);
+
+	function onMove(f, toAdv, moveChk) {
+		var st = loadAdvState();
+		// Record the user's explicit choice against the field's default slot,
+		// so defaults can be restored by unchecking everything.
+		if (f.adv) {
+			arrayToggle(st.main, f.key, !toAdv);
+		} else {
+			arrayToggle(st.adv, f.key, toAdv);
+		}
+		saveAdvState(st);
+		(toAdv ? advBody : mainForm).appendChild(fieldRows[f.key]);
+		moveChk.title = toAdv ? 'Move to main settings' : 'Move to advanced settings';
+		// Open the advanced section so the moved row is actually visible.
+		if (toAdv) setAdvOpen(true);
+	}
+
+	var fieldRows = {};
+	FIELDS.forEach(function (f) {
+		var inAdv = isAdvancedPlaced(f);
+		var row = renderField(f, values, inAdv, onMove);
+		fieldRows[f.key] = row;
+		(inAdv ? advBody : mainForm).appendChild(row);
+	});
+
 	btnSave.addEventListener('click', function () {
 		var values = readForm(form);
 		var args = buildArgs(values);
@@ -246,7 +392,8 @@ function renderInstance(inst, idx) {
 			E('div', { 'class': 'cbi-value-field' }, [ enabledInput ])
 		])
 	]);
-	FIELDS.forEach(function (f) { form.appendChild(renderField(f, values)); });
+	form.appendChild(mainForm);
+	form.appendChild(advSection);
 
 	dom.content(root, [
 		E('h3', {}, inst.name),
@@ -304,7 +451,8 @@ return view.extend({
 				}, 'github.com/recrumptor/openwrt-opera-proxy-bin')
 			]),
 			E('div', { 'class': 'cbi-section-descr' },
-				'Manage several opera-proxy instances. Click a tab to switch between them; click \u270E to rename.'),
+				'Manage several opera-proxy instances. Click a tab to switch between them; click ✎ to rename. ' +
+				'Use the checkbox on the right of any setting to move it to (or from) the collapsible Advanced settings section.'),
 			panesWrap
 		]);
 
@@ -330,7 +478,7 @@ return view.extend({
 			dot.classList.toggle('running', !!inst.running);
 
 			if (!a.querySelector('.op-tab-edit')) {
-				var editBtn = E('button', { 'class': 'op-tab-edit', type: 'button', title: 'Rename' }, '\u270E');
+				var editBtn = E('button', { 'class': 'op-tab-edit', type: 'button', title: 'Rename' }, '✎');
 				editBtn.addEventListener('click', function (ev) {
 					ev.preventDefault();
 					ev.stopPropagation();
