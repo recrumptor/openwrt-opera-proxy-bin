@@ -104,7 +104,7 @@ jobs:
           # бинарник динамически с glibc раннера — то есть libc.so.6, которого попросту
           # нет в musl-окружении OpenWrt. mipsel/aarch64 собираются статически "бесплатно",
           # потому что для них это настоящая кросс-компиляция и cgo сам по себе выключен.
-          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build -ldflags="-s -w" -o ../opera-proxy-bin
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build -ldflags="-s -w" -trimpath -o ../opera-proxy-bin
           cd ..
 
       - name: Install dependencies
