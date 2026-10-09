@@ -56,6 +56,11 @@ var TAB_CSS = '.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e7
 	'.op-status-value{margin-bottom:2px;min-height:1.3em}' +
 	'.op-status-sub{font-size:.85em;opacity:.7;min-height:1.3em}' +
 	'.op-panel button:disabled{cursor:not-allowed;opacity:.45}' +
+	// Each status metric lives in its own rounded box so the three
+	// cards read as separate tiles rather than one continuous strip.
+	'.op-status-card{background:rgba(128,128,128,.09);border:1px solid rgba(128,128,128,.22);'
+	+ 'border-radius:10px;padding:10px 14px;min-width:0}' +
+	'.op-status-card .op-status-title{font-size:.95em}' +
 	// Advanced-section chrome: collapsible header + right-side move checkbox.
 	'.op-adv-header{cursor:pointer;user-select:none;margin-top:14px}' +
 	'.op-adv-header:hover{opacity:.75}' +
@@ -295,11 +300,28 @@ function renderField(f, values, inAdv, onMove) {
 	]);
 }
 
+// Fallback client-side uptime tracking: the RPC normally reports real
+// uptime_sec (computed from /proc/<pid>/stat + /proc/stat btime server-side,
+// immune to browser/router clock skew). START_TS is only used if the daemon
+// doesn't provide the field (e.g. right after upgrading the rpcd script).
+var START_TS = {};
+
+function fmtUptime(ms) {
+	var s = Math.max(0, Math.floor(ms / 1000));
+	var d = Math.floor(s / 86400); s %= 86400;
+	var h = Math.floor(s / 3600); s %= 3600;
+	var m = Math.floor(s / 60); s %= 60;
+	if (d) return d + 'd ' + h + 'h ' + m + 'm';
+	if (h) return h + 'h ' + m + 'm';
+	if (m) return m + 'm ' + s + 's';
+	return s + 's';
+}
+
 function statusCard(title, value, sub) {
-	return E('div', {}, [
+	return E('div', { 'class': 'op-status-card' }, [
 		E('div', { 'class': 'op-status-title' }, title),
 		E('div', { 'class': 'op-status-value' }, value),
-		E('div', { 'class': 'op-status-sub' }, sub || ' ')
+		E('div', { 'class': 'op-status-sub' }, sub || ' ')
 	]);
 }
 
@@ -316,11 +338,26 @@ function renderInstance(inst, idx) {
 	var btnTest = E('button', { 'class': 'cbi-button cbi-button-action' }, 'Test proxy');
 
 	function refreshStatus(i) {
+		// Prefer the daemon's real uptime; fall back to the client-side stamp.
+		if (i.running) {
+			if (!START_TS[inst.name]) START_TS[inst.name] = Date.now();
+		} else {
+			delete START_TS[inst.name];
+		}
+		var uptime = '–';
+		if (i.running) {
+			if (i.uptime_sec !== undefined && i.uptime_sec !== null) {
+				uptime = fmtUptime(i.uptime_sec * 1000);
+			} else if (START_TS[inst.name]) {
+				uptime = fmtUptime(Date.now() - START_TS[inst.name]);
+			}
+		}
 		dom.content(statusRow, [
 			statusCard('Service state', i.running ? E('span', { style: 'color:#2ecc71' }, 'Running') : E('span', { style: 'color:#e74c3c' }, 'Stopped'),
 				i.running ? ('PID: ' + i.pid) : '–'),
 			statusCard('Proxy mode', i.socks_mode ? 'SOCKS5' : 'HTTP', 'Listen: ' + (i.listen || '–')),
-			statusCard('Process memory', i.running ? ((i.rss_kb / 1024).toFixed(1) + ' MB') : '–', ' ')
+			statusCard('Process memory', i.running ? ((i.rss_kb / 1024).toFixed(1) + ' MB') : '–',
+				'Uptime: ' + uptime)
 		]);
 		btnStart.disabled = !!i.running;
 		btnStop.disabled = !i.running;
