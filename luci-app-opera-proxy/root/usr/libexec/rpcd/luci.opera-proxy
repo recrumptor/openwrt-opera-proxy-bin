@@ -22,15 +22,26 @@ svc_json() {
 }
 
 instance_running() {
-	# $1 = svc json, $2 = instance name -> echoes "1 <pid> <rss_kb>" or "0 0 0"
-	local running pid rss
+	# $1 = svc json, $2 = instance name -> echoes "1 <pid> <rss_kb> <uptime_sec>" or "0 0 0 0"
+	local running pid rss starttime btime hz uptime
 	running=$(echo "$1" | jsonfilter -e "@['$CFG'].instances['$2'].running" 2>/dev/null)
 	pid=$(echo "$1" | jsonfilter -e "@['$CFG'].instances['$2'].pid" 2>/dev/null)
 	if [ "$running" = "true" ] && [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
 		rss=$(awk '/VmRSS/{print $2}' "/proc/$pid/status" 2>/dev/null)
-		echo "1 $pid ${rss:-0}"
+		# Real uptime: process start time is /proc/<pid>/stat field 22
+		# (clock ticks since boot). Strip everything up to the last ')' so
+		# comm with spaces/parens can't shift the field numbers, then take
+		# field 20 of the remainder (22 - pid - comm). Add the system boot
+		# epoch (/proc/stat btime) to get the process start epoch.
+		starttime=$(sed -n 's/.*) //p' "/proc/$pid/stat" 2>/dev/null | awk '{print $20}')
+		btime=$(awk '/^btime /{print $2}' /proc/stat 2>/dev/null)
+		hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
+		if [ -n "$starttime" ] && [ -n "$btime" ] && [ -n "$hz" ]; then
+			uptime=$(awk -v bt="$btime" -v st="$starttime" -v hz="$hz" -v now="$(date +%s)" 				'BEGIN{u = now - (bt + st / hz); if (u < 0) u = 0; printf "%d", u}')
+		fi
+		echo "1 $pid ${rss:-0} ${uptime:-0}"
 	else
-		echo "0 0 0"
+		echo "0 0 0 0"
 	fi
 }
 
@@ -58,7 +69,7 @@ arg_value() {
 }
 
 method_get_instances() {
-	local svc name enabled args running pid rss listen socks
+	local svc name enabled args running pid rss uptime listen socks
 
 	svc=$(svc_json)
 
@@ -69,7 +80,7 @@ method_get_instances() {
 		enabled=$(uci -q get "$CFG.$name.enabled")
 		args=$(uci -q get "$CFG.$name.args")
 		set -- $(instance_running "$svc" "$name")
-		running="$1"; pid="$2"; rss="$3"
+		running="$1"; pid="$2"; rss="$3"; uptime="$4"
 
 		listen=$(arg_value "-bind-address" "$args")
 		[ -n "$listen" ] || listen=$(arg_value "--bind-address" "$args")
@@ -83,6 +94,7 @@ method_get_instances() {
 		json_add_boolean running "$running"
 		json_add_int pid "$pid"
 		json_add_int rss_kb "$rss"
+		json_add_int uptime_sec "$uptime"
 		json_add_string listen "$listen"
 		json_add_boolean socks_mode "$socks"
 		json_close_object
