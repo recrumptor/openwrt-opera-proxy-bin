@@ -381,7 +381,11 @@ function renderInstance(inst, idx) {
 	var mainForm = E('div', {});
 	var advBody = E('div', { 'class': 'op-adv-body', style: 'display:none' });
 	var advArrow = E('span', {}, '▸ ');
-	var advHeader = E('h4', { 'class': 'op-adv-header' }, [ advArrow, 'Advanced settings' ]);
+	var advHeader = E('h4', {
+		'class': 'op-adv-header',
+		title: 'Settings with a saved value show in the main form; cleared settings sink back ' +
+			'into this section, grouped by topic (API, Network, ...).'
+	}, [ advArrow, 'Advanced settings' ]);
 
 	function setAdvOpen(open) {
 		advBody.style.display = open ? '' : 'none';
@@ -537,8 +541,7 @@ return view.extend({
 				}, 'github.com/recrumptor/openwrt-opera-proxy-bin')
 			]),
 			E('div', { 'class': 'cbi-section-descr' },
-				'Manage several opera-proxy instances. Click a tab to switch between them; click ✎ to rename. ' +
-				'Settings with a saved value show in the main form; cleared settings sink back into the collapsible Advanced settings section, grouped by topic (API, Network, ...).'),
+				'Manage several opera-proxy instances. Click a tab to switch between them; click ✎ to rename.'),
 			panesWrap
 		]);
 
