@@ -65,9 +65,15 @@ var TAB_CSS = '.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e7
 	'.op-adv-header{cursor:pointer;user-select:none;margin-top:14px}' +
 	'.op-adv-header:hover{opacity:.75}' +
 	'.op-adv-body{padding-left:2px}' +
-	'.op-cbi-flex{display:flex;align-items:flex-start;gap:8px}' +
-	'.op-cbi-flex>.cbi-input-text,.op-cbi-flex>.cbi-input-select{flex:1;min-width:0}' +
-	'.op-adv-toggle{flex:none !important;margin-top:6px !important;cursor:pointer}';
+	// Sub-groups inside the advanced section (API, Network, ...).
+	'.op-adv-group{margin-top:6px}' +
+	'.op-adv-group-header{cursor:pointer;user-select:none;margin:8px 0 4px;font-size:.95em;' +
+	'padding:4px 8px;border-radius:6px;background:rgba(128,128,128,.12)}' +
+	'.op-adv-group-header:hover{background:rgba(128,128,128,.22)}' +
+	'.op-adv-group-count{opacity:.6;font-weight:400;margin-left:4px}' +
+	'.op-adv-group-body{padding-left:10px;border-left:2px solid rgba(128,128,128,.22);margin-left:4px}';
+// (Right-side move checkboxes were removed: section placement is now
+// value-driven — a field surfaces to the main form when it has a saved value.)
 
 // Per-instance default listen address so three freshly-enabled instances
 // don't all collide on the opera-proxy binary's own built-in default (127.0.0.1:18080).
@@ -170,38 +176,31 @@ var FIELDS = [
 var FIELD_ORDER = {};
 FIELDS.forEach(function (f, i) { FIELD_ORDER[f.key] = i; });
 
-// Per-browser layout state: which fields the user moved between the main form
-// and the advanced section. Keyed by field key only (applies to all instances),
-// so the choice survives page reloads without touching UCI/RPC.
-var ADV_STATE_KEY = 'opera-proxy-field-layout';
+// Collapsible sub-groups inside "Advanced settings". Order here = display order;
+// rows inside a group keep the alphabetical FIELDS order.
+var ADV_GROUPS = [
+	{ id: 'api', title: 'API', keys: [
+		'api_address', 'api_client_type', 'api_client_version', 'api_login', 'api_password',
+		'api_proxy', 'api_proxy_file', 'api_proxy_list_url', 'api_proxy_parallel', 'api_user_agent' ] },
+	{ id: 'network', title: 'Network', keys: [
+		'bootstrap_dns', 'cafile', 'fake_sni', 'proxy', 'proxy_bypass' ] },
+	{ id: 'endpoints', title: 'Endpoints', keys: [
+		'discover_csv', 'override_proxy_address', 'proxy_blacklist' ] },
+	{ id: 'selection', title: 'Server selection', keys: [
+		'server_selection_dl_limit', 'server_selection_test_url', 'server_selection_timeout' ] },
+	{ id: 'timing', title: 'Timing & retries', keys: [
+		'init_retries', 'init_retry_interval', 'refresh', 'refresh_retry', 'timeout' ] },
+	{ id: 'logging', title: 'Logging', keys: [ 'verbosity' ] }
+];
+var GROUP_OF = {};
+ADV_GROUPS.forEach(function (g) { g.keys.forEach(function (k) { GROUP_OF[k] = g.id; }); });
 
-function loadAdvState() {
-	try {
-		return JSON.parse(localStorage.getItem(ADV_STATE_KEY)) || { adv: [], main: [] };
-	} catch (e) {
-		return { adv: [], main: [] };
-	}
-}
-
-function saveAdvState(st) {
-	try {
-		localStorage.setItem(ADV_STATE_KEY, JSON.stringify(st));
-	} catch (e) {}
-}
-
-function arrayToggle(arr, key, on) {
-	var i = arr.indexOf(key);
-	if (on && i === -1) arr.push(key);
-	if (!on && i !== -1) arr.splice(i, 1);
-}
-
-// Where should this field live right now? Advanced by default if marked adv,
-// unless the user explicitly moved it to the main form, and vice versa.
-function isAdvancedPlaced(f) {
-	var st = loadAdvState();
-	if (f.adv)
-		return st.main.indexOf(f.key) === -1;
-	return st.adv.indexOf(f.key) !== -1;
+// Section placement is value-driven, no UI toggles: a non-fixed field shows
+// in the main form iff its saved value is non-empty. Fixed fields (country,
+// SOCKS5 mode, listen address, server selection, enable switch) never hide.
+function isAdvancedPlaced(f, values) {
+	if (f.fixed) return false;
+	return String(values[f.key] || '').trim() === '';
 }
 
 function parseArgs(str) {
@@ -246,10 +245,10 @@ function readForm(root) {
 	return values;
 }
 
-// Renders one cbi-value row. The small checkbox on the right edge moves the
-// row between the main form and the advanced section; its checked state always
-// mirrors the current placement (checked = lives in advanced).
-function renderField(f, values, inAdv, onMove) {
+// Renders one cbi-value row. Rows carry data-key so they can be re-inserted
+// at their alphabetical slot in the advanced section; which section a row
+// belongs to is decided by applyLayout() from the saved values.
+function renderField(f, values) {
 	var val = values[f.key];
 	var input;
 
@@ -270,31 +269,10 @@ function renderField(f, values, inAdv, onMove) {
 		});
 	}
 
-	// Fixed fields (country, SOCKS5 mode, listen address, server selection)
-	// have no move checkbox: they always stay in the main form.
-	if (f.fixed) {
-		return E('div', { 'class': 'cbi-value', 'data-key': f.key }, [
-			E('label', { 'class': 'cbi-value-title' }, f.label || f.key),
-			E('div', { 'class': 'cbi-value-field' }, [
-				input,
-				f.hint ? E('div', { 'class': 'cbi-value-description' }, f.hint) : ''
-			])
-		]);
-	}
-
-	var moveChk = E('input', {
-		type: 'checkbox', 'class': 'op-adv-toggle',
-		title: inAdv ? 'Move to main settings' : 'Move to advanced settings',
-		checked: inAdv ? '' : null
-	});
-	moveChk.addEventListener('change', function () {
-		onMove(f, moveChk.checked, moveChk);
-	});
-
 	return E('div', { 'class': 'cbi-value', 'data-key': f.key }, [
 		E('label', { 'class': 'cbi-value-title' }, f.label || f.key),
 		E('div', { 'class': 'cbi-value-field' }, [
-			E('div', { 'class': 'op-cbi-flex' }, [ input, moveChk ]),
+			input,
 			f.hint ? E('div', { 'class': 'cbi-value-description' }, f.hint) : ''
 		])
 	]);
@@ -415,51 +393,69 @@ function renderInstance(inst, idx) {
 
 	var advSection = E('div', {}, [ advHeader, advBody ]);
 
-	function onMove(f, toAdv, moveChk) {
-		var st = loadAdvState();
-		// Record the user's explicit choice against the field's default slot,
-		// so defaults can be restored by unchecking everything.
-		if (f.adv) {
-			arrayToggle(st.main, f.key, !toAdv);
-		} else {
-			arrayToggle(st.adv, f.key, toAdv);
-		}
-		saveAdvState(st);
-		if (toAdv) {
-			// Insert at the field's alphabetical slot so round-tripping a row
-			// between sections always lands it back in the same position.
+	// One collapsible sub-group per ADV_GROUPS entry, all closed by default.
+	var groupUI = {};
+	ADV_GROUPS.forEach(function (g) {
+		var arrow = E('span', {}, '▸ ');
+		var count = E('span', { 'class': 'op-adv-group-count' }, '');
+		var body = E('div', { 'class': 'op-adv-group-body', style: 'display:none' });
+		var header = E('div', { 'class': 'op-adv-group-header' }, [ arrow, g.title, count ]);
+		var wrap = E('div', { 'class': 'op-adv-group' }, [ header, body ]);
+		header.addEventListener('click', function () {
+			var open = body.style.display === 'none';
+			body.style.display = open ? '' : 'none';
+			arrow.textContent = open ? '▾ ' : '▸ ';
+		});
+		groupUI[g.id] = { wrap: wrap, body: body, count: count };
+		advBody.appendChild(wrap);
+	});
+
+	// Refresh the "(n)" counters and hide groups whose fields all moved
+	// to the main form.
+	function updateGroupCounts() {
+		ADV_GROUPS.forEach(function (g) {
+			var n = groupUI[g.id].body.children.length;
+			groupUI[g.id].count.textContent = '(' + n + ')';
+			groupUI[g.id].wrap.style.display = n ? '' : 'none';
+		});
+	}
+
+	// Place every row according to the given values: non-empty -> main form,
+	// empty -> advanced section at its alphabetical slot. Fixed rows are
+	// skipped, they always live in the main form. Silent: never opens the
+	// advanced section on its own.
+	function applyLayout(vals) {
+		FIELDS.forEach(function (f) {
+			if (f.fixed) return;
 			var row = fieldRows[f.key];
-			var before = null;
-			var kids = advBody.children;
-			for (var i = 0; i < kids.length; i++) {
-				var k = kids[i].getAttribute('data-key');
-				if (k !== null && FIELD_ORDER[k] > FIELD_ORDER[f.key]) {
-					before = kids[i];
-					break;
+			if (String(vals[f.key] || '').trim() !== '') {
+				if (row.parentNode !== mainForm)
+					mainForm.appendChild(row);
+			} else if (row.parentNode !== groupUI[GROUP_OF[f.key]].body) {
+				var gBody = groupUI[GROUP_OF[f.key]].body;
+				var before = null;
+				var kids = gBody.children;
+				for (var i = 0; i < kids.length; i++) {
+					var k = kids[i].getAttribute('data-key');
+					if (k !== null && FIELD_ORDER[k] > FIELD_ORDER[f.key]) {
+						before = kids[i];
+						break;
+					}
 				}
+				gBody.insertBefore(row, before);
 			}
-			advBody.insertBefore(row, before);
-		} else {
-			mainForm.appendChild(fieldRows[f.key]);
-		}
-		moveChk.title = toAdv ? 'Move to main settings' : 'Move to advanced settings';
-		// Open the advanced section so the moved row is actually visible.
-		if (toAdv) setAdvOpen(true);
+		});
+		updateGroupCounts();
 	}
 
 	var fieldRows = {};
 	FIELDS.forEach(function (f) {
-		var inAdv = !f.fixed && isAdvancedPlaced(f);
-		var row = renderField(f, values, inAdv, onMove);
+		var row = renderField(f, values);
 		fieldRows[f.key] = row;
-		if (inAdv) {
-			// FIELDS is already in README alphabetical order, so plain
-			// appends produce a sorted advanced section.
-			advBody.appendChild(row);
-		} else {
-			mainForm.appendChild(row);
-		}
+		// Initial guess by current values; applyLayout() sorts it out fully.
+		(isAdvancedPlaced(f, values) ? groupUI[GROUP_OF[f.key]].body : mainForm).appendChild(row);
 	});
+	applyLayout(values);
 
 	btnSave.addEventListener('click', function () {
 		var values = readForm(form);
@@ -469,6 +465,9 @@ function renderInstance(inst, idx) {
 		callSetInstance(inst.name, enabled, args).then(function () {
 			btnSave.disabled = false;
 			ui.addNotification(null, E('p', 'Saved and applied: ' + inst.name), 'info');
+			// Fields that gained a value surface to the main form; cleared
+			// fields sink back into the advanced section (silently).
+			applyLayout(values);
 			poll.trigger();
 		});
 	});
@@ -539,7 +538,7 @@ return view.extend({
 			]),
 			E('div', { 'class': 'cbi-section-descr' },
 				'Manage several opera-proxy instances. Click a tab to switch between them; click ✎ to rename. ' +
-				'Use the checkbox on the right of any setting to move it to (or from) the collapsible Advanced settings section.'),
+				'Settings with a saved value show in the main form; cleared settings sink back into the collapsible Advanced settings section, grouped by topic (API, Network, ...).'),
 			panesWrap
 		]);
 
