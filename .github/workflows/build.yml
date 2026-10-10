@@ -16,10 +16,17 @@ jobs:
   check-version:
     runs-on: ubuntu-latest
     outputs:
-      exists: ${{ steps.check.outputs.exists }}
+      # opera-proxy: версия из upstream (Alexey71/opera-proxy), тег v<ver>
       ver: ${{ steps.get_ver.outputs.ver }}
+      exists: ${{ steps.check.outputs.exists }}
+      # luci-app-opera-proxy: версия из нашего Makefile, тег luci-v<ver>-r<rel>
+      luci_ver: ${{ steps.luci_ver.outputs.luci_ver }}
+      luci_exists: ${{ steps.check_luci.outputs.exists }}
     steps:
-      - name: Get Latest Version
+      # Нужен, чтобы прочитать luci-app-opera-proxy/Makefile
+      - uses: actions/checkout@v6
+
+      - name: Get Latest Version (opera-proxy)
         id: get_ver
         run: |
           # Корректно получаем последнюю версию из релизов Alexey71/opera-proxy
@@ -28,7 +35,7 @@ jobs:
           echo "ver=$VER" >> $GITHUB_OUTPUT
           echo "VER=$VER" >> $GITHUB_ENV
 
-      - name: Check Release
+      - name: Check Release (opera-proxy)
         id: check
         run: |
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
@@ -36,7 +43,33 @@ jobs:
             https://api.github.com/repos/${{ github.repository }}/releases/tags/v${{ env.VER }})
           echo "exists=$([ "$HTTP_STATUS" -eq 200 ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
-  build:
+      - name: Get LuCI version from Makefile
+        id: luci_ver
+        run: |
+          MK=luci-app-opera-proxy/Makefile
+          V=$(sed -n 's/^PKG_VERSION[[:space:]]*:=[[:space:]]*//p' "$MK" | head -n1 | tr -d '[:space:]\r')
+          R=$(sed -n 's/^PKG_RELEASE[[:space:]]*:=[[:space:]]*//p' "$MK" | head -n1 | tr -d '[:space:]\r')
+          if [ -z "$V" ]; then
+            echo "Не удалось прочитать PKG_VERSION из $MK"
+            exit 1
+          fi
+          [ -z "$R" ] && R=1
+          echo "Версия luci-app-opera-proxy: ${V}-r${R}"
+          echo "luci_ver=${V}-r${R}" >> $GITHUB_OUTPUT
+          echo "LUCI_VER=${V}-r${R}" >> $GITHUB_ENV
+
+      - name: Check Release (luci-app-opera-proxy)
+        id: check_luci
+        run: |
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/releases/tags/luci-v${{ env.LUCI_VER }})
+          echo "exists=$([ "$HTTP_STATUS" -eq 200 ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+  # ---------------------------------------------------------------------------
+  # opera-proxy (бинарник): собирается, только если нет релиза этой версии
+  # ---------------------------------------------------------------------------
+  build-proxy:
     needs: check-version
     # В тестовом режиме собираем, даже если релиз этой версии уже существует
     if: needs.check-version.outputs.exists == 'false' || inputs.test_build
@@ -104,7 +137,7 @@ jobs:
           # бинарник динамически с glibc раннера — то есть libc.so.6, которого попросту
           # нет в musl-окружении OpenWrt. mipsel/aarch64 собираются статически "бесплатно",
           # потому что для них это настоящая кросс-компиляция и cgo сам по себе выключен.
-          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build -ldflags="-s -w" -o ../opera-proxy-bin
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.goarch }} GOMIPS=${{ matrix.gomips }} go build -ldflags="-s -w" -trimpath -o ../opera-proxy-bin
           cd ..
 
       - name: Install dependencies
@@ -175,7 +208,120 @@ jobs:
           [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
           sed -i "s/^PKG_VERSION:=.*$/PKG_VERSION:=$VER/" opera-proxy/Makefile
 
-          # Закидываем готовые пакеты в SDK
+          # luci-app нужен SDK только ради зависимости +opera-proxy при defconfig;
+          # сам он собирается отдельным job'ом (build-luci)
+          cp -r opera-proxy sdk/package/
+          cp -r luci-app-opera-proxy sdk/package/
+
+      - name: Compile Package
+        run: |
+          cd sdk
+          make oldconfig || make defconfig
+          ./scripts/feeds update base luci
+          ./scripts/feeds install -a
+          echo "CONFIG_PACKAGE_opera-proxy=y" >> .config
+          make defconfig
+          make package/opera-proxy/compile V=s -j$(nproc)
+
+          echo "=== Поиск и копирование готовых пакетов ==="
+          mkdir -p ../output-artifacts
+
+          VER="${{ needs.check-version.outputs.ver }}"
+          [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
+
+          # ipk называет файлы через подчёркивание (opera-proxy_1.14.0-1_mipsel_24kc.ipk),
+          # apk — через дефис и без подчёркиваний (opera-proxy-1.14.0-r1.apk),
+          # поэтому [_-] покрывает оба варианта одним шаблоном.
+          find bin/ -name "opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+
+          if ! ls ../output-artifacts/opera-proxy-*.${{ matrix.pkg_ext }} >/dev/null 2>&1; then
+            echo "Пакет opera-proxy не найден после компиляции!"
+            exit 1
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opera-proxy-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}
+          path: output-artifacts/
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # luci-app-opera-proxy: собирается, только если нет релиза версии из Makefile
+  # (PKGARCH:=all, поэтому достаточно одного target'а на ветку OpenWrt)
+  # ---------------------------------------------------------------------------
+  build-luci:
+    needs: check-version
+    if: needs.check-version.outputs.luci_exists == 'false' || inputs.test_build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - openwrt_ver: "24.10"
+            pkg_ext: "ipk"
+            target_name: "ramips/mt7621"
+          - openwrt_ver: "25.12"
+            pkg_ext: "apk"
+            target_name: "ramips/mt7621"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: sudo apt update && sudo apt install -y libncurses5-dev zstd xz-utils
+
+      - name: Resolve OpenWrt version & SDK URL
+        id: sdk
+        run: |
+          BRANCH="${{ matrix.openwrt_ver }}"
+
+          FULL_VER=$(curl -s "https://downloads.openwrt.org/releases/" \
+            | grep -oE "${BRANCH//./\\.}\.[0-9]+" \
+            | sort -V | uniq | tail -1)
+
+          if [ -z "$FULL_VER" ]; then
+            echo "Не удалось определить актуальную версию OpenWrt для ветки $BRANCH"
+            exit 1
+          fi
+          echo "Актуальная версия OpenWrt для ветки $BRANCH: $FULL_VER"
+
+          TARGET_DIR="${{ matrix.target_name }}"
+          BASE_URL="https://downloads.openwrt.org/releases/$FULL_VER/targets/$TARGET_DIR"
+          SDK_FILENAME=$(curl -s "$BASE_URL/" \
+            | grep -o 'href="[^"]*openwrt-sdk-[^"]*\.tar\.\(zst\|xz\)"' \
+            | sed 's/href="//;s/"$//' | head -1)
+
+          if [ -z "$SDK_FILENAME" ]; then
+            echo "Не удалось найти SDK для $TARGET_DIR (OpenWrt $FULL_VER)"
+            exit 1
+          fi
+
+          echo "Найден SDK: $SDK_FILENAME"
+          echo "sdk_url=$BASE_URL/$SDK_FILENAME" >> $GITHUB_OUTPUT
+          echo "sdk_filename=$SDK_FILENAME" >> $GITHUB_OUTPUT
+
+      - name: Setup SDK
+        run: |
+          wget -O sdk.archive "${{ steps.sdk.outputs.sdk_url }}"
+          mkdir sdk
+          FILENAME="${{ steps.sdk.outputs.sdk_filename }}"
+          if [[ "$FILENAME" == *.tar.zst ]]; then
+            tar --use-compress-program=unzstd -xf sdk.archive -C sdk --strip-components=1
+          else
+            tar -xJf sdk.archive -C sdk --strip-components=1
+          fi
+
+      - name: Prepare Packages
+        run: |
+          # luci-app зависит от +opera-proxy, поэтому пакет opera-proxy должен
+          # присутствовать в SDK, иначе defconfig отключит luci-app. Настоящий
+          # бинарник здесь не нужен: кладём пустую заглушку, этот пакет никуда
+          # не публикуется.
+          mkdir -p opera-proxy/files/usr/bin
+          : > opera-proxy/files/usr/bin/opera-proxy
+          chmod +x opera-proxy/files/usr/bin/opera-proxy
+
           cp -r opera-proxy sdk/package/
           cp -r luci-app-opera-proxy sdk/package/
 
@@ -191,74 +337,67 @@ jobs:
           make package/opera-proxy/compile V=s -j$(nproc)
           make package/luci-app-opera-proxy/compile V=s -j$(nproc)
 
-          echo "=== Поиск и копирование готовых пакетов ==="
-          mkdir -p ../output-artifacts
+          mkdir -p ../luci-artifacts
 
-          # Получаем версию для имени файла (так же, как делали строкой выше)
-          VER="${{ needs.check-version.outputs.ver }}"
-          [ -z "$VER" ] || [ "$VER" = "null" ] && VER="1.0.0"
+          # Версия — из Makefile luci-app (формат <PKG_VERSION>-r<PKG_RELEASE>)
+          LVER="${{ needs.check-version.outputs.luci_ver }}"
 
-          # opera-proxy собран под конкретную архитектуру.
-          # ipk называет файлы через подчёркивание (opera-proxy_1.14.0-1_mipsel_24kc.ipk),
-          # apk — через дефис и без подчёркиваний (opera-proxy-1.14.0-r1.apk),
-          # поэтому [_-] покрывает оба варианта одним шаблоном.
-          find bin/ -name "opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../output-artifacts/opera-proxy-${VER}-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
+          find bin/ -name "luci-app-opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../luci-artifacts/luci-app-opera-proxy-${LVER}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
 
-          # luci-app-opera-proxy архитектурно-независим (PKGARCH:=all) и одинаков
-          # для любой архитектуры внутри одной ветки OpenWrt, поэтому собираем его
-          # только один раз (на прогоне mipsel_24kc) и кладём в СВОЙ отдельный артефакт,
-          # а не подмешиваем к opera-proxy — иначе он виден только в одном из шести
-          # артефактов матрицы, и его легко не найти.
-          if [ "${{ matrix.pkg_arch }}" = "mipsel_24kc" ]; then
-            mkdir -p ../luci-artifacts
-            find bin/ -name "luci-app-opera-proxy[_-]*.${{ matrix.pkg_ext }}" -exec cp {} ../luci-artifacts/luci-app-opera-proxy-${VER}-v${{ matrix.openwrt_ver }}.${{ matrix.pkg_ext }} \;
-            if ! ls ../luci-artifacts/luci-app-opera-proxy-*.${{ matrix.pkg_ext }} >/dev/null 2>&1; then
-              echo "Пакет luci-app-opera-proxy не найден после компиляции!"
-              exit 1
-            fi
-          fi
-
-          if [ -z "$(ls -A ../output-artifacts/)" ]; then
-            echo "Ни одного пакета не найдено после компиляции!"
+          if ! ls ../luci-artifacts/luci-app-opera-proxy-*.${{ matrix.pkg_ext }} >/dev/null 2>&1; then
+            echo "Пакет luci-app-opera-proxy не найден после компиляции!"
             exit 1
           fi
-          if ! ls ../output-artifacts/opera-proxy-*.${{ matrix.pkg_ext }} >/dev/null 2>&1; then
-            echo "Пакет opera-proxy не найден после компиляции!"
-            exit 1
-          fi
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: opera-proxy-${{ matrix.pkg_arch }}-v${{ matrix.openwrt_ver }}
-          path: output-artifacts/
-          if-no-files-found: error
 
       - name: Upload LuCI Artifact
-        if: matrix.pkg_arch == 'mipsel_24kc'
         uses: actions/upload-artifact@v4
         with:
           name: luci-app-opera-proxy-v${{ matrix.openwrt_ver }}
           path: luci-artifacts/
           if-no-files-found: error
 
+  # ---------------------------------------------------------------------------
+  # Публикация: два независимых релиза (v<ver> и luci-v<ver>-r<rel>)
+  # ---------------------------------------------------------------------------
   publish:
-    needs: [check-version, build]
-    # В тестовом режиме релиз не публикуем
-    if: ${{ !inputs.test_build }}
+    needs: [check-version, build-proxy, build-luci]
+    # В тестовом режиме релиз не публикуем. always-подобное условие нужно, потому что
+    # один из build-job'ов может быть пропущен (skipped) — тогда обычный needs
+    # заблокировал бы и publish.
+    if: >-
+      ${{ !inputs.test_build && !cancelled() && !contains(needs.*.result, 'failure')
+      && (needs.build-proxy.result == 'success' || needs.build-luci.result == 'success') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v5
         with:
           path: artifacts
 
-      - name: Publish Release
+      - name: Publish Release (opera-proxy)
+        if: needs.build-proxy.result == 'success'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.check-version.outputs.ver }}
           name: "v${{ needs.check-version.outputs.ver }}"
           files: |
-            artifacts/**/*.ipk
-            artifacts/**/*.apk
+            artifacts/opera-proxy-*/*.ipk
+            artifacts/opera-proxy-*/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Release (luci-app-opera-proxy)
+        if: needs.build-luci.result == 'success'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: luci-v${{ needs.check-version.outputs.luci_ver }}
+          name: "luci-app-opera-proxy v${{ needs.check-version.outputs.luci_ver }}"
+          # LuCI-релиз не должен становиться "Latest", иначе /releases/latest
+          # будет указывать на него вместо релиза opera-proxy
+          make_latest: false
+          files: |
+            artifacts/luci-app-opera-proxy-*/*.ipk
+            artifacts/luci-app-opera-proxy-*/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
