@@ -35,6 +35,12 @@ var callRename = rpc.declare({
 	params: ['old_name', 'new_name']
 });
 
+var callLog = rpc.declare({
+	object: 'luci.opera-proxy',
+	method: 'get_log',
+	params: ['name', 'lines', 'pid_only']
+});
+
 var callVersion = rpc.declare({
 	object: 'luci.opera-proxy',
 	method: 'get_version',
@@ -61,6 +67,21 @@ var TAB_CSS = '.op-tab-dot{width:8px;height:8px;border-radius:50%;background:#e7
 	'.op-status-card{background:rgba(128,128,128,.09);border:1px solid rgba(128,128,128,.22);'
 	+ 'border-radius:10px;padding:10px 14px;min-width:0}' +
 	'.op-status-card .op-status-title{font-size:.95em}' +
+	// Service-state tile opens the log viewer.
+	'.op-status-clickable{cursor:pointer;transition:background .15s,border-color .15s}' +
+	'.op-status-clickable:hover{background:rgba(128,128,128,.2);border-color:rgba(128,128,128,.55)}' +
+	// Start / Stop / Restart / Test proxy: identical width.
+	'.op-act-btn{width:120px;min-width:120px;box-sizing:border-box;text-align:center;' +
+	'padding-left:0;padding-right:0}' +
+	// Log viewer modal.
+	'#modal_overlay > .modal.op-log-modal{max-width:960px!important;width:92vw}' +
+	'.op-log-bar{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;margin-bottom:8px}' +
+	'.op-log-bar label{display:inline-flex;gap:5px;align-items:center;margin:0}' +
+	'.op-log-meta{font-size:.85em;opacity:.7;margin-bottom:6px;min-height:1.3em}' +
+	'.op-log-pre{margin:0 0 10px;padding:8px;background:rgba(128,128,128,.12);' +
+	'border:1px solid rgba(128,128,128,.25);border-radius:6px;font-family:monospace;font-size:12px;' +
+	'line-height:1.4;white-space:pre-wrap;word-break:break-all;min-height:200px;max-height:55vh;' +
+	'overflow:auto;user-select:text;-webkit-user-select:text;cursor:text}' +
 	// Advanced-section chrome: collapsible header + right-side move checkbox.
 	'.op-adv-header{cursor:pointer;user-select:none;margin-top:14px}' +
 	'.op-adv-header:hover{opacity:.75}' +
@@ -295,12 +316,118 @@ function fmtUptime(ms) {
 	return s + 's';
 }
 
-function statusCard(title, value, sub) {
-	return E('div', { 'class': 'op-status-card' }, [
+function statusCard(title, value, sub, onClick, tip) {
+	var card = E('div', {
+		'class': 'op-status-card' + (onClick ? ' op-status-clickable' : ''),
+		title: tip || null
+	}, [
 		E('div', { 'class': 'op-status-title' }, title),
 		E('div', { 'class': 'op-status-value' }, value),
 		E('div', { 'class': 'op-status-sub' }, sub || ' ')
 	]);
+	if (onClick) card.addEventListener('click', onClick);
+	return card;
+}
+
+// Copy text to the clipboard; falls back to execCommand because LuCI is
+// often served over plain HTTP, where navigator.clipboard is unavailable.
+function copyText(text) {
+	if (navigator.clipboard && window.isSecureContext)
+		return navigator.clipboard.writeText(text);
+	return new Promise(function (resolve, reject) {
+		var ta = E('textarea', { style: 'position:fixed;left:-9999px;top:0' }, text);
+		document.body.appendChild(ta);
+		ta.select();
+		var ok = false;
+		try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+		document.body.removeChild(ta);
+		ok ? resolve() : reject();
+	});
+}
+
+// Popup with the logread output of one instance. Text is selectable;
+// auto-refresh pauses while part of the log is selected so it can be copied.
+function showLogModal(name, running) {
+	var pidOnly = E('input', { type: 'checkbox', checked: running ? '' : null });
+	var autoRef = E('input', { type: 'checkbox', checked: '' });
+	var linesSel = E('select', { 'class': 'cbi-input-select' }, [ 100, 200, 500, 1000 ].map(function (n) {
+		return E('option', { value: n, selected: (n === 200) || undefined }, String(n));
+	}));
+	var meta = E('div', { 'class': 'op-log-meta' }, 'Loading...');
+	var pre = E('pre', { 'class': 'op-log-pre' }, '');
+	var lastText = null, timer = null, stickBottom = true;
+
+	function load(manual) {
+		return callLog(name, parseInt(linesSel.value, 10), pidOnly.checked).then(function (res) {
+			if (!res || res.success === false) {
+				meta.textContent = (res && res.error) || 'Failed to read log';
+				return;
+			}
+			var text = res.log || '';
+			if (!text)
+				text = res.filtered ? '(no log lines for PID ' + res.pid + ')' : '(no log lines)';
+			meta.textContent = (res.filtered ? 'PID ' + res.pid : 'all opera-proxy processes') +
+				(res.running ? '' : ' · instance stopped') +
+				' · updated ' + new Date().toLocaleTimeString();
+			if (text === lastText) return;
+
+			var sel = window.getSelection();
+			if (!manual && sel && !sel.isCollapsed && pre.contains(sel.anchorNode)) return;
+
+			var atBottom = stickBottom || (pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24);
+			pre.textContent = text;
+			lastText = text;
+			if (atBottom) pre.scrollTop = pre.scrollHeight;
+			stickBottom = false;
+		});
+	}
+
+	function reload() { stickBottom = true; lastText = null; load(true); }
+	pidOnly.addEventListener('change', reload);
+	linesSel.addEventListener('change', reload);
+
+	var btnRefresh = E('button', { 'class': 'cbi-button cbi-button-action' }, 'Refresh');
+	var btnCopy = E('button', {
+		'class': 'cbi-button',
+		title: 'Copies the selected text, or the whole log if nothing is selected'
+	}, 'Copy');
+	var btnClose = E('button', { 'class': 'cbi-button' }, 'Close');
+
+	btnRefresh.addEventListener('click', function () { load(true); });
+	// keep the text selection alive when the button is pressed
+	btnCopy.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+	btnCopy.addEventListener('click', function () {
+		var sel = window.getSelection();
+		var part = (sel && !sel.isCollapsed && pre.contains(sel.anchorNode)) ? sel.toString() : '';
+		copyText(part || pre.textContent).then(function () {
+			btnCopy.textContent = part ? 'Selection copied' : 'Log copied';
+		}, function () {
+			btnCopy.textContent = 'Copy failed';
+		}).then(function () {
+			setTimeout(function () { btnCopy.textContent = 'Copy'; }, 1500);
+		});
+	});
+	btnClose.addEventListener('click', function () {
+		clearInterval(timer);
+		ui.hideModal();
+	});
+
+	ui.showModal('Log: ' + name, [
+		E('div', { 'class': 'op-log-bar' }, [
+			E('label', {}, [ pidOnly, 'Current PID only' ]),
+			E('label', {}, [ 'Lines: ', linesSel ]),
+			E('label', {}, [ autoRef, 'Auto-refresh' ])
+		]),
+		meta,
+		pre,
+		E('div', { 'class': 'right' }, [ btnRefresh, ' ', btnCopy, ' ', btnClose ])
+	], 'op-log-modal');
+
+	load(true);
+	timer = setInterval(function () {
+		if (!document.body.contains(pre)) { clearInterval(timer); return; }
+		if (autoRef.checked) load(false);
+	}, 3000);
 }
 
 function renderInstance(inst, idx) {
@@ -311,9 +438,9 @@ function renderInstance(inst, idx) {
 	var statusRow = E('div', { 'class': 'op-status-row' });
 	var actionsRow = E('div', { 'class': 'cbi-page-actions' });
 
-	var btnStart = E('button', { 'class': 'cbi-button cbi-button-positive' }, 'Start');
-	var btnStop = E('button', { 'class': 'cbi-button cbi-button-negative' }, 'Stop');
-	var btnTest = E('button', { 'class': 'cbi-button cbi-button-action' }, 'Test proxy');
+	var btnStart = E('button', { 'class': 'cbi-button cbi-button-positive op-act-btn' }, 'Start');
+	var btnStop = E('button', { 'class': 'cbi-button cbi-button-negative op-act-btn' }, 'Stop');
+	var btnTest = E('button', { 'class': 'cbi-button cbi-button-action op-act-btn' }, 'Test proxy');
 
 	function refreshStatus(i) {
 		// Prefer the daemon's real uptime; fall back to the client-side stamp.
@@ -332,7 +459,9 @@ function renderInstance(inst, idx) {
 		}
 		dom.content(statusRow, [
 			statusCard('Service state', i.running ? E('span', { style: 'color:#2ecc71' }, 'Running') : E('span', { style: 'color:#e74c3c' }, 'Stopped'),
-				i.running ? ('PID: ' + i.pid) : '–'),
+				i.running ? ('PID: ' + i.pid + ' · click for log') : 'click for log',
+				function () { showLogModal(inst.name, !!i.running); },
+				'Show the log of this process'),
 			statusCard('Proxy mode', i.socks_mode ? 'SOCKS5' : 'HTTP', 'Listen: ' + (i.listen || '–')),
 			statusCard('Process memory', i.running ? ((i.rss_kb / 1024).toFixed(1) + ' MB') : '–',
 				'Uptime: ' + uptime)
@@ -344,7 +473,7 @@ function renderInstance(inst, idx) {
 
 	refreshStatus(inst);
 
-	var btnRestart = E('button', { 'class': 'cbi-button' }, 'Restart');
+	var btnRestart = E('button', { 'class': 'cbi-button op-act-btn' }, 'Restart');
 	var btnSave = E('button', { 'class': 'cbi-button cbi-button-save' }, 'Save & apply');
 	var lastAction = E('span', { 'class': 'cbi-value-description' }, '');
 
@@ -366,7 +495,8 @@ function renderInstance(inst, idx) {
 		callTest(name).then(function (res) {
 			var via = res && res.proxy_url ? (' via ' + res.proxy_url) : '';
 			if (res && res.success) {
-				lastAction.textContent = 'Test OK (HTTP ' + res.http_code + ', ' + parseFloat(res.time_total).toFixed(2) + 's)' + via;
+				lastAction.textContent = 'Test OK (HTTP ' + res.http_code + ', ' + parseFloat(res.time_total).toFixed(2) + 's)' + via +
+					(res.external_ip ? ' · external IP: ' + res.external_ip : ' · external IP: not detected');
 			} else {
 				lastAction.textContent = 'Test failed' + (res && res.http_code ? ' (HTTP ' + res.http_code + ')' : '') + via;
 			}
