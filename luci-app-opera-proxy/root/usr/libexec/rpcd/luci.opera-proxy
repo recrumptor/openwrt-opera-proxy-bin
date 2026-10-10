@@ -22,26 +22,15 @@ svc_json() {
 }
 
 instance_running() {
-	# $1 = svc json, $2 = instance name -> echoes "1 <pid> <rss_kb> <uptime_sec>" or "0 0 0 0"
-	local running pid rss starttime btime hz uptime
+	# $1 = svc json, $2 = instance name -> echoes "1 <pid> <rss_kb>" or "0 0 0"
+	local running pid rss
 	running=$(echo "$1" | jsonfilter -e "@['$CFG'].instances['$2'].running" 2>/dev/null)
 	pid=$(echo "$1" | jsonfilter -e "@['$CFG'].instances['$2'].pid" 2>/dev/null)
 	if [ "$running" = "true" ] && [ -n "$pid" ] && [ -d "/proc/$pid" ]; then
 		rss=$(awk '/VmRSS/{print $2}' "/proc/$pid/status" 2>/dev/null)
-		# Real uptime: process start time is /proc/<pid>/stat field 22
-		# (clock ticks since boot). Strip everything up to the last ')' so
-		# comm with spaces/parens can't shift the field numbers, then take
-		# field 20 of the remainder (22 - pid - comm). Add the system boot
-		# epoch (/proc/stat btime) to get the process start epoch.
-		starttime=$(sed -n 's/.*) //p' "/proc/$pid/stat" 2>/dev/null | awk '{print $20}')
-		btime=$(awk '/^btime /{print $2}' /proc/stat 2>/dev/null)
-		hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
-		if [ -n "$starttime" ] && [ -n "$btime" ] && [ -n "$hz" ]; then
-			uptime=$(awk -v bt="$btime" -v st="$starttime" -v hz="$hz" -v now="$(date +%s)" 				'BEGIN{u = now - (bt + st / hz); if (u < 0) u = 0; printf "%d", u}')
-		fi
-		echo "1 $pid ${rss:-0} ${uptime:-0}"
+		echo "1 $pid ${rss:-0}"
 	else
-		echo "0 0 0 0"
+		echo "0 0 0"
 	fi
 }
 
@@ -69,7 +58,7 @@ arg_value() {
 }
 
 method_get_instances() {
-	local svc name enabled args running pid rss uptime listen socks
+	local svc name enabled args running pid rss listen socks
 
 	svc=$(svc_json)
 
@@ -80,7 +69,7 @@ method_get_instances() {
 		enabled=$(uci -q get "$CFG.$name.enabled")
 		args=$(uci -q get "$CFG.$name.args")
 		set -- $(instance_running "$svc" "$name")
-		running="$1"; pid="$2"; rss="$3"; uptime="$4"
+		running="$1"; pid="$2"; rss="$3"
 
 		listen=$(arg_value "-bind-address" "$args")
 		[ -n "$listen" ] || listen=$(arg_value "--bind-address" "$args")
@@ -94,7 +83,6 @@ method_get_instances() {
 		json_add_boolean running "$running"
 		json_add_int pid "$pid"
 		json_add_int rss_kb "$rss"
-		json_add_int uptime_sec "$uptime"
 		json_add_string listen "$listen"
 		json_add_boolean socks_mode "$socks"
 		json_close_object
@@ -199,6 +187,19 @@ method_test_proxy() {
 		-x "$proxy_url" "https://www.google.com/generate_204" 2>/dev/null)
 	code="$1"; time="$2"
 
+	ext_ip=""
+	if [ "$code" = "204" ] || [ "$code" = "200" ]; then
+		# Ask a few "what is my IP" services through the proxy; the first
+		# plausible answer (only hex digits, dots, colons) wins.
+		for u in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com"; do
+			ext_ip=$(curl -s -m 4 -x "$proxy_url" "$u" 2>/dev/null | head -n1 | tr -d ' \r\n')
+			case "$ext_ip" in
+				''|*[!0-9a-fA-F:.]*) ext_ip="" ;;
+				*) break ;;
+			esac
+		done
+	fi
+
 	json_init
 	if [ "$code" = "204" ] || [ "$code" = "200" ]; then
 		json_add_boolean success 1
@@ -208,6 +209,53 @@ method_test_proxy() {
 	json_add_string http_code "${code:-0}"
 	json_add_string time_total "${time:-0}"
 	json_add_string proxy_url "$proxy_url"
+	json_add_string external_ip "$ext_ip"
+	json_dump
+}
+
+method_get_log() {
+	local name lines pid_only svc running pid out filtered=0 esc
+
+	json_load "$(cat)"
+	json_get_var name name
+	json_get_var lines lines
+	json_get_var pid_only pid_only
+
+	if ! is_known_instance "$name"; then
+		json_init
+		json_add_boolean success 0
+		json_add_string error "unknown instance"
+		json_dump
+		return
+	fi
+
+	case "$lines" in ''|*[!0-9]*) lines=200 ;; esac
+	[ "$lines" -lt 10 ] && lines=10
+	[ "$lines" -gt 1000 ] && lines=1000
+
+	svc=$(svc_json)
+	set -- $(instance_running "$svc" "$name")
+	running="$1"; pid="$2"
+
+	# procd tags the stdout/stderr of a daemon as "opera-proxy[<pid>]", so the
+	# PID filter isolates one instance. Without it (or when the instance is
+	# stopped) every opera-proxy line is shown, from all instances.
+	esc=$(printf '\033')
+	if [ "$pid_only" = 1 ] && [ "$running" = 1 ] && [ "$pid" -gt 0 ]; then
+		filtered=1
+		out=$(logread 2>/dev/null | grep -F "[$pid]" | tail -n "$lines")
+	else
+		out=$(logread 2>/dev/null | grep -F "$CFG" | tail -n "$lines")
+	fi
+	# strip ANSI colours / control chars and cap the size (jshn env limit)
+	out=$(printf '%s' "$out" | sed "s/${esc}\[[0-9;]*[A-Za-z]//g" | tr -d '\000-\010\013\014\016-\037' | tail -c 60000)
+
+	json_init
+	json_add_boolean success 1
+	json_add_boolean running "$running"
+	json_add_boolean filtered "$filtered"
+	json_add_int pid "$pid"
+	json_add_string log "$out"
 	json_dump
 }
 
@@ -286,6 +334,11 @@ case "$1" in
 		json_close_object
 		json_add_object "get_version"
 		json_close_object
+		json_add_object "get_log"
+		json_add_string name ""
+		json_add_int lines 0
+		json_add_boolean pid_only 0
+		json_close_object
 		json_dump
 		;;
 	call)
@@ -296,6 +349,7 @@ case "$1" in
 			test_proxy)      method_test_proxy ;;
 			rename_instance) method_rename_instance ;;
 			get_version)     method_get_version ;;
+			get_log)         method_get_log ;;
 			*) echo '{}'; exit 1 ;;
 		esac
 		;;
