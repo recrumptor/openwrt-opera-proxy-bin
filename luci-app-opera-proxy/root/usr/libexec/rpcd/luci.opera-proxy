@@ -143,6 +143,13 @@ method_action() {
 			/etc/init.d/opera-proxy reload >/dev/null 2>&1
 			;;
 		restart)
+			# "reload" alone restarts only instances whose config changed, so
+			# drop the running instance from procd first (as "stop" does) and let
+			# "reload" start it again. The pause lets the old process release its port.
+			ubus -S call service delete "{\"name\":\"$CFG\",\"instance\":\"$name\"}" >/dev/null 2>&1
+			sleep 1
+			uci set "$CFG.$name.enabled=1"
+			uci commit "$CFG"
 			/etc/init.d/opera-proxy reload >/dev/null 2>&1
 			;;
 		*)
