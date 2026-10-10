@@ -70,6 +70,7 @@ jobs:
   # opera-proxy (бинарник): собирается, только если нет релиза этой версии
   # ---------------------------------------------------------------------------
   build-proxy:
+    name: build-proxy (${{ matrix.openwrt_ver }}, ${{ matrix.pkg_arch }})
     needs: check-version
     # В тестовом режиме собираем, даже если релиз этой версии уже существует
     if: needs.check-version.outputs.exists == 'false' || inputs.test_build
@@ -251,6 +252,7 @@ jobs:
   # (PKGARCH:=all, поэтому достаточно одного target'а на ветку OpenWrt)
   # ---------------------------------------------------------------------------
   build-luci:
+    name: build-luci (${{ matrix.openwrt_ver }}, ${{ matrix.pkg_ext }})
     needs: check-version
     if: needs.check-version.outputs.luci_exists == 'false' || inputs.test_build
     runs-on: ubuntu-latest
